@@ -1,18 +1,26 @@
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
+from mnq_fractal_bot.backtest.audit import (
+    SignalAudit,
+    build_signal_audit,
+)
+
 from mnq_fractal_bot.execution.paper_broker import (
     BrokerEvent,
     OpenPosition,
     PaperBroker,
     PendingOrder,
 )
+
 from mnq_fractal_bot.models.candle import Candle
 from mnq_fractal_bot.models.setup import Setup
+
 from mnq_fractal_bot.strategy.fractal_engine import (
     EngineSnapshot,
     FractalEngine,
 )
+
 from mnq_fractal_bot.strategy.trade_plan import (
     TradePlan,
 )
@@ -30,6 +38,10 @@ class BotSnapshot:
     position: OpenPosition | None
 
     closed_trade_count: int
+
+    # Number of unique Fractal trade-ready
+    # signals recorded so far.
+    audit_count: int
 
 
 class BotRunner:
@@ -67,6 +79,20 @@ class BotRunner:
             point_value=point_value,
         )
 
+        # ==================================================
+        # SIGNAL AUDIT HISTORY
+        # ==================================================
+
+        self.signal_audits: list[
+            SignalAudit
+        ] = []
+
+        # Prevent the same signal from being
+        # written to the audit log on every candle.
+        self.audited_signal_ids: set[
+            str
+        ] = set()
+
     # ==================================================
     # SIGNAL ID
     # ==================================================
@@ -80,7 +106,7 @@ class BotRunner:
         Create a stable ID for one Fractal entry idea.
 
         C3 and C4 are considered different entry
-        opportunities for duplicate protection.
+        opportunities.
         """
 
         direction = (
@@ -103,17 +129,11 @@ class BotRunner:
 
         if plan.entry_name == "C4 ENTRY ZONE":
             zone = "C4"
-
-            zone_time = (
-                setup.c4_start_time
-            )
+            zone_time = setup.c4_start_time
 
         else:
             zone = "C3"
-
-            zone_time = (
-                setup.c3_start_time
-            )
+            zone_time = setup.c3_start_time
 
         time_text = (
             zone_time.isoformat()
@@ -138,18 +158,6 @@ class BotRunner:
         setup: Setup,
         plan: TradePlan,
     ) -> datetime | None:
-        """
-        C4:
-            use its known C4 end time.
-
-        C3:
-            use known C3 end when available.
-
-            During a live C3, C3 end may not yet
-            be stored, so calculate it from the
-            C3 start + current HTF duration.
-        """
-
         if plan.entry_name == "C4 ENTRY ZONE":
             return setup.c4_end_time
 
@@ -212,6 +220,44 @@ class BotRunner:
         )
 
     # ==================================================
+    # AUDIT
+    # ==================================================
+
+    def _record_signal_audit(
+        self,
+        setup: Setup,
+        plan: TradePlan,
+        signal_id: str,
+        created_at: datetime,
+    ) -> bool:
+        """
+        Record each unique BOT TRADE READY
+        signal exactly once.
+
+        Returns True if a new audit was added.
+        """
+
+        if signal_id in self.audited_signal_ids:
+            return False
+
+        audit = build_signal_audit(
+            setup=setup,
+            plan=plan,
+            signal_id=signal_id,
+            created_at=created_at,
+        )
+
+        self.signal_audits.append(
+            audit
+        )
+
+        self.audited_signal_ids.add(
+            signal_id
+        )
+
+        return True
+
+    # ==================================================
     # MAIN BOT LOOP
     # ==================================================
 
@@ -222,23 +268,11 @@ class BotRunner:
         events: list[BrokerEvent] = []
 
         # ==================================================
-        # 1. PROCESS ORDERS THAT ALREADY EXISTED
-        #    BEFORE THIS CANDLE
-        #
-        # This is deliberately BEFORE the engine.
-        #
-        # Why?
-        #
-        # A setup discovered from THIS candle's close
-        # must not fill earlier inside THIS SAME candle.
-        #
-        # That would introduce look-ahead bias.
+        # 1. PROCESS EXISTING PAPER ORDER / POSITION
         # ==================================================
 
-        broker_event = (
-            self.broker.on_candle(
-                candle
-            )
+        broker_event = self.broker.on_candle(
+            candle
         )
 
         if broker_event is not None:
@@ -247,13 +281,11 @@ class BotRunner:
             )
 
         # ==================================================
-        # 2. PROCESS THIS CANDLE THROUGH FRACTAL MODEL
+        # 2. PROCESS CANDLE THROUGH FRACTAL MODEL
         # ==================================================
 
-        engine_snapshot = (
-            self.engine.on_candle(
-                candle
-            )
+        engine_snapshot = self.engine.on_candle(
+            candle
         )
 
         (
@@ -265,12 +297,23 @@ class BotRunner:
         )
 
         # ==================================================
-        # 3. CANCEL A STALE PENDING ORDER
-        #
-        # Existing position is NOT cancelled.
-        #
-        # Once entered, V1 manages it using its
-        # original SL / TP.
+        # 3. RECORD UNIQUE TRADE-READY SIGNAL
+        # ==================================================
+
+        if (
+            selected_setup is not None
+            and trade_plan is not None
+            and active_signal_id is not None
+        ):
+            self._record_signal_audit(
+                setup=selected_setup,
+                plan=trade_plan,
+                signal_id=active_signal_id,
+                created_at=candle.timestamp,
+            )
+
+        # ==================================================
+        # 4. CANCEL STALE PENDING ORDER
         # ==================================================
 
         if (
@@ -298,12 +341,7 @@ class BotRunner:
                     )
 
         # ==================================================
-        # 4. SUBMIT NEW PAPER ORDER
-        #
-        # This happens AFTER processing the candle.
-        #
-        # Therefore the new order becomes eligible
-        # for filling from the NEXT candle onward.
+        # 5. SUBMIT NEW PAPER ORDER
         # ==================================================
 
         order_submitted = False
@@ -322,8 +360,6 @@ class BotRunner:
                 )
             )
 
-            # Do not submit an order whose
-            # entry window has already ended.
             if (
                 expires_at is None
                 or candle.timestamp < expires_at
@@ -332,30 +368,39 @@ class BotRunner:
                     self.broker
                     .submit_trade_plan(
                         plan=trade_plan,
-                        signal_id=(
-                            active_signal_id
-                        ),
-                        expires_at=(
-                            expires_at
-                        ),
+                        signal_id=active_signal_id,
+                        expires_at=expires_at,
                     )
                 )
 
         # ==================================================
-        # 5. SNAPSHOT
+        # 6. RETURN SNAPSHOT
         # ==================================================
 
         return BotSnapshot(
             engine=engine_snapshot,
-            events=tuple(events),
-            order_submitted=order_submitted,
+
+            events=tuple(
+                events
+            ),
+
+            order_submitted=(
+                order_submitted
+            ),
+
             pending_order=(
                 self.broker.pending_order
             ),
+
             position=(
                 self.broker.position
             ),
+
             closed_trade_count=len(
                 self.broker.closed_trades
+            ),
+
+            audit_count=len(
+                self.signal_audits
             ),
         )
