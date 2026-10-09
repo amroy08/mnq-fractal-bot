@@ -21,3 +21,6 @@ __pycache__/
 # Testing/cache
 .pytest_cache/
 .coverage
+
+# Python package build metadata
+*.egg-info/
