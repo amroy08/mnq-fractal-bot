@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 
+from mnq_fractal_bot.data.csv_loader import load_candles_from_csv
 from mnq_fractal_bot.models.candle import Candle
 
 
@@ -30,6 +31,24 @@ def main():
     print(f"Low:    {candle.low}")
     print(f"Close:  {candle.close}")
     print(f"Volume: {candle.volume}")
+
+    candles = load_candles_from_csv(
+        "data/sample_mnq_5m.csv"
+    )
+
+    print()
+    print("CSV DATA TEST")
+    print(f"Candles loaded: {len(candles)}")
+
+    for csv_candle in candles:
+        print(
+            csv_candle.timestamp,
+            csv_candle.open,
+            csv_candle.high,
+            csv_candle.low,
+            csv_candle.close,
+            csv_candle.volume,
+        )
 
 
 if __name__ == "__main__":
