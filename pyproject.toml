@@ -7,10 +7,17 @@ name = "mnq-fractal-bot"
 version = "0.1.0"
 description = "Python paper-trading bot for the MNQ Fractal Model"
 requires-python = ">=3.13"
+dependencies = [
+    "pandas>=2.2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+]
 
 [tool.setuptools]
 package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
-
