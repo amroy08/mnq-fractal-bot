@@ -1,9 +1,14 @@
 import argparse
 from pathlib import Path
 
+from mnq_fractal_bot.backtest.audit_export import (
+    export_signal_audits,
+)
+
 from mnq_fractal_bot.backtest.runner import (
     BacktestRunner,
 )
+
 from mnq_fractal_bot.data.csv_loader import (
     load_candles_from_csv,
 )
@@ -38,6 +43,11 @@ def print_report(
     print(
         f"Candles processed : "
         f"{result.candle_count:,}"
+    )
+
+    print(
+        f"Signals audited   : "
+        f"{len(result.signal_audits):,}"
     )
 
     print()
@@ -156,7 +166,8 @@ def print_report(
                 f"Entry {trade.entry_price:.2f} | "
                 f"Exit {trade.exit_price:.2f} | "
                 f"{trade.exit_reason} | "
-                f"P&L {format_money(trade.gross_pnl)}"
+                f"P&L "
+                f"{format_money(trade.gross_pnl)}"
             )
 
     else:
@@ -167,10 +178,12 @@ def print_report(
 
     print()
     print("=" * 60)
+
     print(
         "PAPER BACKTEST ONLY - "
         "NO LIVE BROKER ORDERS"
     )
+
     print("=" * 60)
 
 
@@ -200,7 +213,7 @@ def main():
     parser = argparse.ArgumentParser(
         description=(
             "Run the MNQ Fractal Model "
-            "paper backtest from a CSV file."
+            "paper backtest from CSV."
         )
     )
 
@@ -218,18 +231,22 @@ def main():
             "5m",
             "15m",
         ],
-        help=(
-            "Lower timeframe used by "
-            "the Fractal engine."
-        ),
     )
 
     parser.add_argument(
         "--starting-balance",
         type=float,
         default=25_000.0,
+    )
+
+    parser.add_argument(
+        "--audit-output",
+        default=(
+            "data/fractal_signal_audit.csv"
+        ),
         help=(
-            "Starting paper account balance."
+            "Where to save the Fractal "
+            "signal audit CSV."
         ),
     )
 
@@ -243,10 +260,26 @@ def main():
         ),
     )
 
+    audit_path = export_signal_audits(
+        audits=result.signal_audits,
+        output_path=args.audit_output,
+    )
+
     print_report(
         result
+    )
+
+    print()
+    print(
+        "Signal audit saved to:"
+    )
+
+    print(
+        audit_path
     )
 
 
 if __name__ == "__main__":
     main()
+    
+    
