@@ -21,6 +21,10 @@ from mnq_fractal_bot.data.csv_loader import (
     load_candles_from_csv,
 )
 
+from mnq_fractal_bot.execution.costs import (
+    ExecutionCostConfig,
+)
+
 from mnq_fractal_bot.risk.trade_filter import (
     TradeFilterConfig,
 )
@@ -42,8 +46,13 @@ def print_report(
     result,
     outcomes,
     trade_filter_config,
+    execution_cost_config,
 ) -> None:
     stats = result.stats
+
+    costs = (
+        result.execution_cost_summary
+    )
 
     submitted_count = sum(
         1
@@ -60,34 +69,61 @@ def print_report(
     target_count = sum(
         1
         for outcome in outcomes
-        if outcome.final_status == "TARGET"
+        if (
+            outcome.final_status
+            == "TARGET"
+        )
     )
 
     stopped_count = sum(
         1
         for outcome in outcomes
-        if outcome.final_status == "STOPPED"
+        if (
+            outcome.final_status
+            == "STOPPED"
+        )
     )
 
     expired_count = sum(
         1
         for outcome in outcomes
-        if outcome.final_status == "EXPIRED"
+        if (
+            outcome.final_status
+            == "EXPIRED"
+        )
     )
 
     cancelled_count = sum(
         1
         for outcome in outcomes
-        if outcome.final_status == "CANCELLED"
+        if (
+            outcome.final_status
+            == "CANCELLED"
+        )
+    )
+
+    not_submitted_count = sum(
+        1
+        for outcome in outcomes
+        if (
+            outcome.final_status
+            == "NOT_SUBMITTED"
+        )
     )
 
     print()
     print("=" * 60)
-    print("MNQ FRACTAL MODEL - PAPER BACKTEST")
+    print(
+        "MNQ FRACTAL MODEL - PAPER BACKTEST"
+    )
     print("=" * 60)
 
+    # ==================================================
+    # FILTERS
+    # ==================================================
+
     print()
-    print("FILTER")
+    print("TRADE FILTER")
     print("-" * 60)
 
     print(
@@ -105,6 +141,43 @@ def print_report(
         f"{trade_filter_config.max_stop_points}"
     )
 
+    # ==================================================
+    # EXECUTION ASSUMPTIONS
+    # ==================================================
+
+    print()
+    print("EXECUTION COST ASSUMPTIONS")
+    print("-" * 60)
+
+    print(
+        f"Round-trip fees   : "
+        f"{format_money(execution_cost_config.commission_round_trip)}"
+    )
+
+    print(
+        f"Entry slippage    : "
+        f"{execution_cost_config.slippage_ticks_entry} ticks"
+    )
+
+    print(
+        f"Exit slippage     : "
+        f"{execution_cost_config.slippage_ticks_exit} ticks"
+    )
+
+    print(
+        f"MNQ tick size     : "
+        f"{execution_cost_config.tick_size}"
+    )
+
+    print(
+        f"MNQ point value   : "
+        f"{format_money(execution_cost_config.point_value)}"
+    )
+
+    # ==================================================
+    # DATA
+    # ==================================================
+
     print()
     print("DATA")
     print("-" * 60)
@@ -118,6 +191,10 @@ def print_report(
         f"Signals audited   : "
         f"{len(result.signal_audits):,}"
     )
+
+    # ==================================================
+    # SIGNALS
+    # ==================================================
 
     print()
     print("SIGNAL OUTCOMES")
@@ -153,6 +230,15 @@ def print_report(
         f"{cancelled_count}"
     )
 
+    print(
+        f"Not submitted     : "
+        f"{not_submitted_count}"
+    )
+
+    # ==================================================
+    # TRADES
+    # ==================================================
+
     print()
     print("TRADES")
     print("-" * 60)
@@ -173,12 +259,21 @@ def print_report(
     )
 
     print(
+        f"Breakeven         : "
+        f"{stats.breakeven}"
+    )
+
+    print(
         f"Win rate          : "
         f"{format_percentage(stats.win_rate_pct)}"
     )
 
+    # ==================================================
+    # GROSS RESULTS
+    # ==================================================
+
     print()
-    print("P&L")
+    print("GROSS RESULTS")
     print("-" * 60)
 
     print(
@@ -201,6 +296,76 @@ def print_report(
         f"{format_money(stats.average_trade)}"
     )
 
+    # ==================================================
+    # EXECUTION COSTS
+    # ==================================================
+
+    print()
+    print("EXECUTION COSTS")
+    print("-" * 60)
+
+    print(
+        f"Fees              : "
+        f"-{format_money(costs.commission_cost)}"
+    )
+
+    print(
+        f"Entry slippage    : "
+        f"-{format_money(costs.entry_slippage_cost)}"
+    )
+
+    print(
+        f"Exit slippage     : "
+        f"-{format_money(costs.exit_slippage_cost)}"
+    )
+
+    print(
+        f"Total slippage    : "
+        f"-{format_money(costs.total_slippage_cost)}"
+    )
+
+    print(
+        f"Total costs       : "
+        f"-{format_money(costs.total_execution_cost)}"
+    )
+
+    print(
+        f"Avg cost / trade  : "
+        f"{format_money(costs.average_cost_per_trade)}"
+    )
+
+    # ==================================================
+    # NET RESULTS
+    # ==================================================
+
+    print()
+    print("NET RESULTS")
+    print("-" * 60)
+
+    print(
+        f"Gross P&L         : "
+        f"{format_money(costs.gross_pnl)}"
+    )
+
+    print(
+        f"Execution costs   : "
+        f"-{format_money(costs.total_execution_cost)}"
+    )
+
+    print(
+        f"NET P&L           : "
+        f"{format_money(costs.net_pnl)}"
+    )
+
+    print(
+        f"Avg net / trade   : "
+        f"{format_money(costs.average_net_pnl_per_trade)}"
+    )
+
+    # ==================================================
+    # RISK
+    # ==================================================
+
     print()
     print("RISK")
     print("-" * 60)
@@ -213,19 +378,23 @@ def print_report(
         )
 
     print(
-        f"Profit factor     : "
+        f"Gross PF          : "
         f"{profit_factor_text}"
     )
 
     print(
-        f"Max drawdown      : "
+        f"Gross max DD      : "
         f"{format_money(stats.max_drawdown)}"
     )
 
     print(
-        f"Max drawdown %    : "
+        f"Gross max DD %    : "
         f"{format_percentage(stats.max_drawdown_pct)}"
     )
+
+    # ==================================================
+    # ACCOUNT
+    # ==================================================
 
     print()
     print("ACCOUNT")
@@ -233,20 +402,27 @@ def print_report(
 
     print(
         f"Starting balance  : "
-        f"{format_money(stats.starting_balance)}"
+        f"{format_money(costs.starting_balance)}"
     )
 
     print(
-        f"Ending balance    : "
+        f"Gross ending      : "
         f"{format_money(stats.ending_balance)}"
+    )
+
+    print(
+        f"Net ending        : "
+        f"{format_money(costs.net_ending_balance)}"
     )
 
     print()
     print("=" * 60)
+
     print(
         "PAPER BACKTEST ONLY - "
         "NO LIVE BROKER ORDERS"
     )
+
     print("=" * 60)
 
 
@@ -254,20 +430,38 @@ def run_csv_backtest(
     csv_path: str | Path,
     lower_timeframe: str = "5m",
     starting_balance: float = 25_000.0,
-    trade_filter_config: TradeFilterConfig | None = None,
+    trade_filter_config: (
+        TradeFilterConfig | None
+    ) = None,
+    execution_cost_config: (
+        ExecutionCostConfig | None
+    ) = None,
 ):
     candles = load_candles_from_csv(
         csv_path
     )
 
     runner = BacktestRunner(
-        lower_timeframe=lower_timeframe,
+        lower_timeframe=(
+            lower_timeframe
+        ),
+
         tick_size=0.25,
+
         sl_buffer_ticks=2,
+
         point_value=2.0,
-        starting_balance=starting_balance,
+
+        starting_balance=(
+            starting_balance
+        ),
+
         trade_filter_config=(
             trade_filter_config
+        ),
+
+        execution_cost_config=(
+            execution_cost_config
         ),
     )
 
@@ -303,24 +497,46 @@ def main():
         default=25_000.0,
     )
 
+    # ==================================================
+    # TRADE FILTERS
+    # ==================================================
+
     parser.add_argument(
         "--c3-only",
         action="store_true",
-        help=(
-            "Allow C3 trades and "
-            "disable C4 trades."
-        ),
     )
 
     parser.add_argument(
         "--max-stop-points",
         type=float,
         default=None,
-        help=(
-            "Reject trades whose entry-to-stop "
-            "distance exceeds this many points."
-        ),
     )
+
+    # ==================================================
+    # EXECUTION COSTS
+    # ==================================================
+
+    parser.add_argument(
+        "--commission-round-trip",
+        type=float,
+        default=0.0,
+    )
+
+    parser.add_argument(
+        "--entry-slippage-ticks",
+        type=int,
+        default=0,
+    )
+
+    parser.add_argument(
+        "--exit-slippage-ticks",
+        type=int,
+        default=0,
+    )
+
+    # ==================================================
+    # OUTPUT FILES
+    # ==================================================
 
     parser.add_argument(
         "--audit-output",
@@ -338,53 +554,121 @@ def main():
 
     args = parser.parse_args()
 
+    # ==================================================
+    # FILTER CONFIG
+    # ==================================================
+
     trade_filter_config = (
         TradeFilterConfig(
             allow_c3=True,
+
             allow_c4=(
                 not args.c3_only
             ),
+
             max_stop_points=(
                 args.max_stop_points
             ),
         )
     )
 
+    # ==================================================
+    # COST CONFIG
+    # ==================================================
+
+    execution_cost_config = (
+        ExecutionCostConfig(
+            commission_round_trip=(
+                args.commission_round_trip
+            ),
+
+            slippage_ticks_entry=(
+                args.entry_slippage_ticks
+            ),
+
+            slippage_ticks_exit=(
+                args.exit_slippage_ticks
+            ),
+
+            tick_size=0.25,
+
+            point_value=2.0,
+        )
+    )
+
+    # ==================================================
+    # RUN BACKTEST
+    # ==================================================
+
     result = run_csv_backtest(
         csv_path=args.csv_path,
-        lower_timeframe=args.timeframe,
+
+        lower_timeframe=(
+            args.timeframe
+        ),
+
         starting_balance=(
             args.starting_balance
         ),
+
         trade_filter_config=(
             trade_filter_config
         ),
+
+        execution_cost_config=(
+            execution_cost_config
+        ),
     )
+
+    # ==================================================
+    # EXPORT SIGNAL AUDIT
+    # ==================================================
 
     audit_path = export_signal_audits(
         audits=result.signal_audits,
-        output_path=args.audit_output,
+
+        output_path=(
+            args.audit_output
+        ),
     )
+
+    # ==================================================
+    # BUILD + EXPORT OUTCOMES
+    # ==================================================
 
     outcomes = build_signal_outcomes(
         audits=result.signal_audits,
-        broker_events=result.broker_events,
+
+        broker_events=(
+            result.broker_events
+        ),
     )
 
     outcomes_path = (
         export_signal_outcomes(
             outcomes=outcomes,
+
             output_path=(
                 args.outcomes_output
             ),
         )
     )
 
+    # ==================================================
+    # PRINT
+    # ==================================================
+
     print_report(
         result=result,
+
         outcomes=outcomes,
+
         trade_filter_config=(
             trade_filter_config
+        ),
+
+        execution_cost_config=(
+            execution_cost_config
         ),
     )
 
@@ -392,6 +676,7 @@ def main():
     print(
         "Signal audit saved to:"
     )
+
     print(
         audit_path
     )
@@ -401,6 +686,7 @@ def main():
     print(
         "Signal outcomes saved to:"
     )
+
     print(
         outcomes_path
     )
