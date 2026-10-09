@@ -26,10 +26,31 @@ from mnq_fractal_bot.strategy.trade_plan import (
 )
 
 
+# ======================================================
+# PERMANENT BROKER EVENT RECORD
+# ======================================================
+
+@dataclass(frozen=True)
+class RecordedBrokerEvent:
+    timestamp: datetime
+
+    event_type: str
+
+    signal_id: str | None = None
+
+    price: float | None = None
+    gross_pnl: float | None = None
+
+
+# ======================================================
+# BOT SNAPSHOT
+# ======================================================
+
 @dataclass(frozen=True)
 class BotSnapshot:
     engine: EngineSnapshot
 
+    # Events produced on THIS candle only.
     events: tuple[BrokerEvent, ...]
 
     order_submitted: bool
@@ -39,24 +60,27 @@ class BotSnapshot:
 
     closed_trade_count: int
 
-    # Number of unique Fractal trade-ready
-    # signals recorded so far.
+    # Total unique Fractal signals audited.
     audit_count: int
+
+    # Total broker events recorded
+    # across the whole run.
+    broker_event_count: int
 
 
 class BotRunner:
     """
-    Connect:
+    Complete local PAPER trading pipeline:
 
-        Market candle
-            ↓
+        Candle
+          ↓
         FractalEngine
-            ↓
+          ↓
         TradePlan
-            ↓
+          ↓
         PaperBroker
-
-    PAPER ONLY.
+          ↓
+        Audit + Broker Event History
 
     No Tradovate connection.
     No live orders.
@@ -69,11 +93,19 @@ class BotRunner:
         sl_buffer_ticks: int = 2,
         point_value: float = 2.0,
     ):
+        # ==================================================
+        # FRACTAL ENGINE
+        # ==================================================
+
         self.engine = FractalEngine(
             lower_timeframe=lower_timeframe,
             tick_size=tick_size,
             sl_buffer_ticks=sl_buffer_ticks,
         )
+
+        # ==================================================
+        # PAPER BROKER
+        # ==================================================
 
         self.broker = PaperBroker(
             point_value=point_value,
@@ -87,11 +119,26 @@ class BotRunner:
             SignalAudit
         ] = []
 
-        # Prevent the same signal from being
-        # written to the audit log on every candle.
         self.audited_signal_ids: set[
             str
         ] = set()
+
+        # ==================================================
+        # BROKER EVENT HISTORY
+        #
+        # This permanently records:
+        #
+        # ORDER_SUBMITTED
+        # ENTRY_FILLED
+        # ORDER_CANCELLED
+        # ORDER_EXPIRED
+        # POSITION_TARGET
+        # POSITION_STOPPED
+        # ==================================================
+
+        self.broker_event_history: list[
+            RecordedBrokerEvent
+        ] = []
 
     # ==================================================
     # SIGNAL ID
@@ -103,10 +150,10 @@ class BotRunner:
         plan: TradePlan,
     ) -> str:
         """
-        Create a stable ID for one Fractal entry idea.
+        Stable identifier for one Fractal entry idea.
 
-        C3 and C4 are considered different entry
-        opportunities.
+        A C3 entry and C4 entry are treated as
+        different opportunities.
         """
 
         direction = (
@@ -116,24 +163,39 @@ class BotRunner:
         )
 
         swept_htf = (
-            str(setup.swept_htf_index)
-            if setup.swept_htf_index is not None
+            str(
+                setup.swept_htf_index
+            )
+            if setup.swept_htf_index
+            is not None
             else "na"
         )
 
         sweep_bar = (
-            str(setup.sweep_bar_index)
-            if setup.sweep_bar_index is not None
+            str(
+                setup.sweep_bar_index
+            )
+            if setup.sweep_bar_index
+            is not None
             else "na"
         )
 
-        if plan.entry_name == "C4 ENTRY ZONE":
+        if (
+            plan.entry_name
+            == "C4 ENTRY ZONE"
+        ):
             zone = "C4"
-            zone_time = setup.c4_start_time
+
+            zone_time = (
+                setup.c4_start_time
+            )
 
         else:
             zone = "C3"
-            zone_time = setup.c3_start_time
+
+            zone_time = (
+                setup.c3_start_time
+            )
 
         time_text = (
             zone_time.isoformat()
@@ -158,25 +220,55 @@ class BotRunner:
         setup: Setup,
         plan: TradePlan,
     ) -> datetime | None:
-        if plan.entry_name == "C4 ENTRY ZONE":
-            return setup.c4_end_time
+        # --------------------------------------------------
+        # C4
+        # --------------------------------------------------
 
-        if plan.entry_name != "C3 ENTRY ZONE":
+        if (
+            plan.entry_name
+            == "C4 ENTRY ZONE"
+        ):
+            return (
+                setup.c4_end_time
+            )
+
+        # --------------------------------------------------
+        # C3
+        # --------------------------------------------------
+
+        if (
+            plan.entry_name
+            != "C3 ENTRY ZONE"
+        ):
             return None
 
-        if setup.c3_end_time is not None:
-            return setup.c3_end_time
+        if (
+            setup.c3_end_time
+            is not None
+        ):
+            return (
+                setup.c3_end_time
+            )
 
-        if setup.c3_start_time is None:
+        if (
+            setup.c3_start_time
+            is None
+        ):
             return None
 
-        if self.engine.higher_timeframe == "1h":
+        if (
+            self.engine.higher_timeframe
+            == "1h"
+        ):
             return (
                 setup.c3_start_time
                 + timedelta(hours=1)
             )
 
-        if self.engine.higher_timeframe == "4h":
+        if (
+            self.engine.higher_timeframe
+            == "4h"
+        ):
             return (
                 setup.c3_start_time
                 + timedelta(hours=4)
@@ -196,21 +288,43 @@ class BotRunner:
         TradePlan | None,
         str | None,
     ]:
-        setup = snapshot.selected_setup
-        plan = snapshot.trade_plan
+        setup = (
+            snapshot.selected_setup
+        )
+
+        plan = (
+            snapshot.trade_plan
+        )
 
         if setup is None:
-            return None, None, None
+            return (
+                None,
+                None,
+                None,
+            )
 
         if plan is None:
-            return setup, None, None
+            return (
+                setup,
+                None,
+                None,
+            )
 
+        # Model may be READY visually,
+        # but bot automation requires
+        # a valid target as well.
         if not plan.bot_trade_ready:
-            return setup, plan, None
+            return (
+                setup,
+                plan,
+                None,
+            )
 
-        signal_id = self._build_signal_id(
-            setup=setup,
-            plan=plan,
+        signal_id = (
+            self._build_signal_id(
+                setup=setup,
+                plan=plan,
+            )
         )
 
         return (
@@ -220,7 +334,7 @@ class BotRunner:
         )
 
     # ==================================================
-    # AUDIT
+    # SIGNAL AUDIT
     # ==================================================
 
     def _record_signal_audit(
@@ -231,13 +345,14 @@ class BotRunner:
         created_at: datetime,
     ) -> bool:
         """
-        Record each unique BOT TRADE READY
-        signal exactly once.
-
-        Returns True if a new audit was added.
+        Store each unique BOT TRADE READY
+        Fractal signal exactly once.
         """
 
-        if signal_id in self.audited_signal_ids:
+        if (
+            signal_id
+            in self.audited_signal_ids
+        ):
             return False
 
         audit = build_signal_audit(
@@ -258,6 +373,50 @@ class BotRunner:
         return True
 
     # ==================================================
+    # BROKER EVENT AUDIT
+    # ==================================================
+
+    def _record_broker_event(
+        self,
+        event: BrokerEvent,
+        timestamp: datetime,
+    ) -> None:
+        """
+        Convert an in-memory BrokerEvent into
+        a permanent historical record.
+        """
+
+        if timestamp.tzinfo is None:
+            raise ValueError(
+                "Broker event timestamp "
+                "must include a timezone."
+            )
+
+        record = RecordedBrokerEvent(
+            timestamp=timestamp,
+
+            event_type=(
+                event.event_type
+            ),
+
+            signal_id=(
+                event.signal_id
+            ),
+
+            price=(
+                event.price
+            ),
+
+            gross_pnl=(
+                event.gross_pnl
+            ),
+        )
+
+        self.broker_event_history.append(
+            record
+        )
+
+    # ==================================================
     # MAIN BOT LOOP
     # ==================================================
 
@@ -265,14 +424,28 @@ class BotRunner:
         self,
         candle: Candle,
     ) -> BotSnapshot:
-        events: list[BrokerEvent] = []
+        # Events generated on this candle.
+        events: list[
+            BrokerEvent
+        ] = []
 
         # ==================================================
-        # 1. PROCESS EXISTING PAPER ORDER / POSITION
+        # 1. PROCESS EXISTING ORDER / POSITION
+        #
+        # IMPORTANT:
+        #
+        # This happens BEFORE processing the candle
+        # through the strategy.
+        #
+        # Therefore a signal discovered from THIS
+        # candle cannot magically fill earlier
+        # inside the same candle.
         # ==================================================
 
-        broker_event = self.broker.on_candle(
-            candle
+        broker_event = (
+            self.broker.on_candle(
+                candle
+            )
         )
 
         if broker_event is not None:
@@ -280,12 +453,19 @@ class BotRunner:
                 broker_event
             )
 
+            self._record_broker_event(
+                event=broker_event,
+                timestamp=candle.timestamp,
+            )
+
         # ==================================================
-        # 2. PROCESS CANDLE THROUGH FRACTAL MODEL
+        # 2. PROCESS FRACTAL MODEL
         # ==================================================
 
-        engine_snapshot = self.engine.on_candle(
-            candle
+        engine_snapshot = (
+            self.engine.on_candle(
+                candle
+            )
         )
 
         (
@@ -297,19 +477,24 @@ class BotRunner:
         )
 
         # ==================================================
-        # 3. RECORD UNIQUE TRADE-READY SIGNAL
+        # 3. RECORD UNIQUE FRACTAL SIGNAL
         # ==================================================
 
         if (
             selected_setup is not None
             and trade_plan is not None
-            and active_signal_id is not None
+            and active_signal_id
+            is not None
         ):
             self._record_signal_audit(
                 setup=selected_setup,
                 plan=trade_plan,
-                signal_id=active_signal_id,
-                created_at=candle.timestamp,
+                signal_id=(
+                    active_signal_id
+                ),
+                created_at=(
+                    candle.timestamp
+                ),
             )
 
         # ==================================================
@@ -318,7 +503,8 @@ class BotRunner:
 
         if (
             self.broker.position is None
-            and self.broker.pending_order is not None
+            and self.broker.pending_order
+            is not None
         ):
             existing_signal_id = (
                 self.broker
@@ -340,6 +526,13 @@ class BotRunner:
                         cancel_event
                     )
 
+                    self._record_broker_event(
+                        event=cancel_event,
+                        timestamp=(
+                            candle.timestamp
+                        ),
+                    )
+
         # ==================================================
         # 5. SUBMIT NEW PAPER ORDER
         # ==================================================
@@ -349,9 +542,11 @@ class BotRunner:
         if (
             selected_setup is not None
             and trade_plan is not None
-            and active_signal_id is not None
+            and active_signal_id
+            is not None
             and self.broker.position is None
-            and self.broker.pending_order is None
+            and self.broker.pending_order
+            is None
         ):
             expires_at = (
                 self._get_order_expiry(
@@ -360,21 +555,59 @@ class BotRunner:
                 )
             )
 
+            # Do not submit an already-expired
+            # setup window.
             if (
                 expires_at is None
-                or candle.timestamp < expires_at
+                or candle.timestamp
+                < expires_at
             ):
                 order_submitted = (
                     self.broker
                     .submit_trade_plan(
                         plan=trade_plan,
-                        signal_id=active_signal_id,
-                        expires_at=expires_at,
+                        signal_id=(
+                            active_signal_id
+                        ),
+                        expires_at=(
+                            expires_at
+                        ),
                     )
                 )
 
+                # PaperBroker returns True rather
+                # than a BrokerEvent when submission
+                # succeeds, so create one here.
+                if order_submitted:
+                    submitted_event = (
+                        BrokerEvent(
+                            event_type=(
+                                "ORDER_SUBMITTED"
+                            ),
+                            signal_id=(
+                                active_signal_id
+                            ),
+                            price=(
+                                trade_plan.entry_price
+                            ),
+                        )
+                    )
+
+                    events.append(
+                        submitted_event
+                    )
+
+                    self._record_broker_event(
+                        event=(
+                            submitted_event
+                        ),
+                        timestamp=(
+                            candle.timestamp
+                        ),
+                    )
+
         # ==================================================
-        # 6. RETURN SNAPSHOT
+        # 6. SNAPSHOT
         # ==================================================
 
         return BotSnapshot(
@@ -402,5 +635,9 @@ class BotRunner:
 
             audit_count=len(
                 self.signal_audits
+            ),
+
+            broker_event_count=len(
+                self.broker_event_history
             ),
         )
