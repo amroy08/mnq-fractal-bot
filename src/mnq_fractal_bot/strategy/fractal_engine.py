@@ -5,16 +5,39 @@ from mnq_fractal_bot.data.htf_builder import DevelopingHTFBuilder
 from mnq_fractal_bot.data.timeframes import get_higher_timeframe
 from mnq_fractal_bot.models.candle import Candle
 from mnq_fractal_bot.models.setup import Setup
+
 from mnq_fractal_bot.strategy.c2_tracker import update_c2_setup
+
 from mnq_fractal_bot.strategy.c3_c4 import (
     start_c4_phase,
     update_c4_invalidation,
 )
+
 from mnq_fractal_bot.strategy.cisd import find_cisd_level
-from mnq_fractal_bot.strategy.entry_zones import start_post_c2_phase
-from mnq_fractal_bot.strategy.post_c2 import update_post_c2_setup
+
+from mnq_fractal_bot.strategy.entry_zones import (
+    start_post_c2_phase,
+)
+
+from mnq_fractal_bot.strategy.liquidity import (
+    set_formation_liquidity,
+)
+
+from mnq_fractal_bot.strategy.post_c2 import (
+    update_post_c2_setup,
+)
+
 from mnq_fractal_bot.strategy.setup_builder import (
     create_setup_candidates,
+)
+
+from mnq_fractal_bot.strategy.setup_selection import (
+    select_setup,
+)
+
+from mnq_fractal_bot.strategy.trade_plan import (
+    TradePlan,
+    build_trade_plan,
 )
 
 
@@ -33,13 +56,28 @@ class EngineSnapshot:
 
     completed_setups: tuple[Setup, ...]
 
+    # Setup currently chosen by the same
+    # priority concept as the Pine builder.
+    selected_setup: Setup | None
+
+    # True when bullish and bearish setups
+    # have equal priority.
+    both_sides: bool
+
+    # Entry / SL / TP / READY output.
+    trade_plan: TradePlan | None
+
 
 class FractalEngine:
     def __init__(
         self,
         lower_timeframe: str,
+        tick_size: float = 0.25,
+        sl_buffer_ticks: int = 2,
     ):
-        self.lower_timeframe = lower_timeframe
+        self.lower_timeframe = (
+            lower_timeframe
+        )
 
         self.higher_timeframe = (
             get_higher_timeframe(
@@ -47,10 +85,6 @@ class FractalEngine:
             )
         )
 
-        # For now we are focusing on:
-        #
-        # 5m  -> 1H
-        # 15m -> 4H
         if self.higher_timeframe not in {
             "1h",
             "4h",
@@ -60,26 +94,44 @@ class FractalEngine:
                 "5m→1h and 15m→4h."
             )
 
-        self.htf_builder = DevelopingHTFBuilder(
-            self.higher_timeframe
+        if tick_size <= 0:
+            raise ValueError(
+                "Tick size must be greater than zero."
+            )
+
+        if sl_buffer_ticks < 0:
+            raise ValueError(
+                "SL buffer ticks cannot be negative."
+            )
+
+        self.tick_size = tick_size
+
+        self.sl_buffer_ticks = (
+            sl_buffer_ticks
         )
 
-        # All incoming lower-timeframe candles.
+        self.htf_builder = (
+            DevelopingHTFBuilder(
+                self.higher_timeframe
+            )
+        )
+
+        # All lower-timeframe candles.
         self.ltf_candles: list[Candle] = []
 
-        # Completed 1H / 4H candles.
-        self.completed_htf_candles: list[Candle] = []
+        # Completed HTF candles.
+        self.completed_htf_candles: list[
+            Candle
+        ] = []
 
-        # Pine equivalents:
-        #
-        # live_bearish
-        # live_bullish
+        # Live Fractal setups.
         self.live_bearish: Setup | None = None
         self.live_bullish: Setup | None = None
 
-        # Pine moves completed C3 setups into
-        # its historical setup collection.
-        self.completed_setups: list[Setup] = []
+        # C3 completed / C4 historical setups.
+        self.completed_setups: list[
+            Setup
+        ] = []
 
     # ==================================================
     # HTF HELPERS
@@ -90,17 +142,24 @@ class FractalEngine:
         start_time: datetime,
     ) -> datetime:
         if self.higher_timeframe == "1h":
-            return start_time + timedelta(hours=1)
+            return (
+                start_time
+                + timedelta(hours=1)
+            )
 
         if self.higher_timeframe == "4h":
-            return start_time + timedelta(hours=4)
+            return (
+                start_time
+                + timedelta(hours=4)
+            )
 
         raise ValueError(
-            f"Unsupported HTF: {self.higher_timeframe}"
+            f"Unsupported HTF: "
+            f"{self.higher_timeframe}"
         )
 
     # ==================================================
-    # CISD INITIALIZATION
+    # CISD
     # ==================================================
 
     def _initialize_cisd(
@@ -108,11 +167,6 @@ class FractalEngine:
         setup: Setup,
         current_index: int,
     ) -> Setup:
-        """
-        A new Fractal sweep setup immediately
-        searches backwards for its CISD level.
-        """
-
         bias = (
             -1
             if setup.is_bullish
@@ -126,7 +180,10 @@ class FractalEngine:
         )
 
         if cisd is not None:
-            setup.cisd_level = cisd.price
+            setup.cisd_level = (
+                cisd.price
+            )
+
             setup.cisd_start_index = (
                 cisd.start_index
             )
@@ -136,7 +193,7 @@ class FractalEngine:
         return setup
 
     # ==================================================
-    # HTF BOUNDARY TRANSITIONS
+    # HTF TRANSITIONS
     # ==================================================
 
     def _transition_setup_at_htf_boundary(
@@ -145,25 +202,14 @@ class FractalEngine:
         completed_htf: Candle,
         current_candle: Candle,
     ) -> Setup | None:
-        """
-        Called when a new HTF candle starts.
-
-        Two possible transitions:
-
-        C2 closes -> C3 starts
-
-        or
-
-        C3 closes -> C4 starts
-        """
-
         setup.htf_count += 1
 
         # --------------------------------------------------
-        # C2 JUST CLOSED
+        # C2 CLOSED -> C3
         # --------------------------------------------------
+
         if not setup.is_post_c2:
-            result = start_post_c2_phase(
+            return start_post_c2_phase(
                 setup=setup,
                 completed_c2=completed_htf,
                 c3_open=current_candle.open,
@@ -171,52 +217,43 @@ class FractalEngine:
                 candles=self.ltf_candles,
             )
 
-            return result
-
         # --------------------------------------------------
-        # C3 JUST CLOSED
+        # C3 CLOSED -> C4
         # --------------------------------------------------
-        if setup.is_post_c2:
-            # Pine removes the setup when C3 finishes
-            # without CISD confirmation.
-            if (
-                not setup.cisd_triggered
-                or setup.is_invalid
-            ):
-                return None
 
-            c4_end_time = self._get_htf_end_time(
-                current_candle.timestamp
-            )
-
-            setup = start_c4_phase(
-                setup=setup,
-                completed_c3=completed_htf,
-                c4_open=current_candle.open,
-                c4_start_time=current_candle.timestamp,
-                c4_end_time=c4_end_time,
-            )
-
-            self.completed_setups.append(
-                setup
-            )
-
-            # Once moved to history/C4,
-            # it is no longer a live C2/C3 setup.
+        if (
+            not setup.cisd_triggered
+            or setup.is_invalid
+        ):
             return None
 
-        return setup
+        c4_end_time = (
+            self._get_htf_end_time(
+                current_candle.timestamp
+            )
+        )
+
+        setup = start_c4_phase(
+            setup=setup,
+            completed_c3=completed_htf,
+            c4_open=current_candle.open,
+            c4_start_time=(
+                current_candle.timestamp
+            ),
+            c4_end_time=c4_end_time,
+        )
+
+        self.completed_setups.append(
+            setup
+        )
+
+        return None
 
     def _handle_htf_transition(
         self,
         completed_htf: Candle,
         current_candle: Candle,
     ) -> None:
-        """
-        Handle C2 -> C3 and C3 -> C4
-        for both directions.
-        """
-
         if self.live_bearish is not None:
             self.live_bearish = (
                 self._transition_setup_at_htf_boundary(
@@ -243,90 +280,61 @@ class FractalEngine:
         self,
         setup: Setup,
         current_index: int,
-    ) -> tuple[Setup | None, bool]:
-        """
-        Returns:
-
-        setup
-        replacement_required
-        """
-
+    ) -> Setup | None:
         # --------------------------------------------------
         # C2
         # --------------------------------------------------
+
         if not setup.is_post_c2:
-            setup = update_c2_setup(
+            return update_c2_setup(
                 setup=setup,
                 candles=self.ltf_candles,
                 current_index=current_index,
             )
 
-            return setup, False
-
         # --------------------------------------------------
         # C3 / POST-C2
         # --------------------------------------------------
-        post_c2_result = update_post_c2_setup(
+
+        result = update_post_c2_setup(
             setup=setup,
             candles=self.ltf_candles,
             current_index=current_index,
         )
 
-        if post_c2_result.replacement_required:
-            # Remove current setup.
-            #
-            # Later in the SAME on_candle() call,
-            # _create_new_setups() can create the
-            # replacement against the completed C2.
-            return None, True
+        if result.replacement_required:
+            return None
 
-        return (
-            post_c2_result.setup,
-            False,
-        )
+        return result.setup
 
     def _update_existing_setups(
         self,
         current_index: int,
     ) -> None:
-        """
-        Update live C2/C3 setups using the newest
-        lower-timeframe candle.
-        """
-
         if self.live_bearish is not None:
-            (
-                self.live_bearish,
-                _,
-            ) = self._update_one_live_setup(
-                setup=self.live_bearish,
-                current_index=current_index,
+            self.live_bearish = (
+                self._update_one_live_setup(
+                    setup=self.live_bearish,
+                    current_index=current_index,
+                )
             )
 
         if self.live_bullish is not None:
-            (
-                self.live_bullish,
-                _,
-            ) = self._update_one_live_setup(
-                setup=self.live_bullish,
-                current_index=current_index,
+            self.live_bullish = (
+                self._update_one_live_setup(
+                    setup=self.live_bullish,
+                    current_index=current_index,
+                )
             )
 
     # ==================================================
-    # C4 UPDATES
+    # C4
     # ==================================================
 
     def _update_completed_setups(
         self,
         current_candle: Candle,
     ) -> None:
-        """
-        Setups that finished C3 can still have an
-        active C4 entry zone.
-
-        Update C4 invalidation while price develops.
-        """
-
         for setup in self.completed_setups:
             if setup.c4_zone_set:
                 update_c4_invalidation(
@@ -335,19 +343,37 @@ class FractalEngine:
                 )
 
     # ==================================================
-    # NEW SWEEPS
+    # NEW SWEEP SETUPS
     # ==================================================
+
+    def _prepare_new_setup(
+        self,
+        setup: Setup,
+        previous_htf: Candle,
+        older_htf: Candle | None,
+        current_index: int,
+    ) -> Setup:
+        # Add the setup's own C1 / C0
+        # formation liquidity.
+        setup = set_formation_liquidity(
+            setup=setup,
+            c1=previous_htf,
+            c0=older_htf,
+        )
+
+        # Find initial CISD.
+        setup = self._initialize_cisd(
+            setup=setup,
+            current_index=current_index,
+        )
+
+        return setup
 
     def _create_new_setups(
         self,
         current_candle: Candle,
         current_index: int,
     ) -> None:
-        """
-        Look for fresh sweeps of the latest
-        completed HTF candle.
-        """
-
         if not self.completed_htf_candles:
             return
 
@@ -355,8 +381,22 @@ class FractalEngine:
             self.completed_htf_candles[-1]
         )
 
+        older_htf = None
+
+        if (
+            len(
+                self.completed_htf_candles
+            )
+            >= 2
+        ):
+            older_htf = (
+                self.completed_htf_candles[-2]
+            )
+
         previous_htf_index = (
-            len(self.completed_htf_candles)
+            len(
+                self.completed_htf_candles
+            )
             - 1
         )
 
@@ -370,13 +410,19 @@ class FractalEngine:
         # --------------------------------------------------
         # BEARISH
         # --------------------------------------------------
+
         if (
             self.live_bearish is None
-            and candidates.bearish is not None
+            and candidates.bearish
+            is not None
         ):
             self.live_bearish = (
-                self._initialize_cisd(
-                    setup=candidates.bearish,
+                self._prepare_new_setup(
+                    setup=(
+                        candidates.bearish
+                    ),
+                    previous_htf=previous_htf,
+                    older_htf=older_htf,
                     current_index=current_index,
                 )
             )
@@ -384,33 +430,77 @@ class FractalEngine:
         # --------------------------------------------------
         # BULLISH
         # --------------------------------------------------
+
         if (
             self.live_bullish is None
-            and candidates.bullish is not None
+            and candidates.bullish
+            is not None
         ):
             self.live_bullish = (
-                self._initialize_cisd(
-                    setup=candidates.bullish,
+                self._prepare_new_setup(
+                    setup=(
+                        candidates.bullish
+                    ),
+                    previous_htf=previous_htf,
+                    older_htf=older_htf,
                     current_index=current_index,
                 )
             )
 
     # ==================================================
-    # MAIN ENGINE ENTRY POINT
+    # OUTPUT / TRADE PLAN
+    # ==================================================
+
+    def _build_trade_output(
+        self,
+        current_time: datetime,
+    ) -> tuple[
+        Setup | None,
+        bool,
+        TradePlan | None,
+    ]:
+        selection = select_setup(
+            live_bullish=(
+                self.live_bullish
+            ),
+            live_bearish=(
+                self.live_bearish
+            ),
+            completed_setups=(
+                self.completed_setups
+            ),
+            current_time=current_time,
+        )
+
+        trade_plan = None
+
+        if selection.setup is not None:
+            trade_plan = build_trade_plan(
+                setup=selection.setup,
+                tick_size=self.tick_size,
+                sl_buffer_ticks=(
+                    self.sl_buffer_ticks
+                ),
+            )
+
+        return (
+            selection.setup,
+            selection.both_sides,
+            trade_plan,
+        )
+
+    # ==================================================
+    # MAIN
     # ==================================================
 
     def on_candle(
         self,
         candle: Candle,
     ) -> EngineSnapshot:
-        """
-        Feed one new 5m / 15m candle
-        into the Fractal engine.
-        """
+        # --------------------------------------------------
+        # 1. STORE LOWER-TIMEFRAME CANDLE
+        # --------------------------------------------------
 
-        # --------------------------------------------------
-        # 1. STORE LTF CANDLE
-        # --------------------------------------------------
         self.ltf_candles.append(
             candle
         )
@@ -421,8 +511,9 @@ class FractalEngine:
         )
 
         # --------------------------------------------------
-        # 2. UPDATE HTF CANDLE
+        # 2. DEVELOP HTF CANDLE
         # --------------------------------------------------
+
         completed_htf, developing_htf = (
             self.htf_builder.update(
                 candle
@@ -430,17 +521,14 @@ class FractalEngine:
         )
 
         # --------------------------------------------------
-        # 3. NEW HTF PERIOD
+        # 3. HTF BOUNDARY
         # --------------------------------------------------
+
         if completed_htf is not None:
             self.completed_htf_candles.append(
                 completed_htf
             )
 
-            # IMPORTANT:
-            # Transition C2/C3 using the HTF candle
-            # that just finished BEFORE processing
-            # the new candle as part of C3/C4.
             self._handle_htf_transition(
                 completed_htf=completed_htf,
                 current_candle=candle,
@@ -449,23 +537,38 @@ class FractalEngine:
         # --------------------------------------------------
         # 4. UPDATE LIVE C2 / C3 SETUPS
         # --------------------------------------------------
+
         self._update_existing_setups(
             current_index=current_index,
         )
 
         # --------------------------------------------------
-        # 5. UPDATE C4 SETUPS
+        # 5. UPDATE HISTORICAL C4 SETUPS
         # --------------------------------------------------
+
         self._update_completed_setups(
             current_candle=candle,
         )
 
         # --------------------------------------------------
-        # 6. LOOK FOR NEW SWEEPS
+        # 6. CHECK NEW SWEEPS
         # --------------------------------------------------
+
         self._create_new_setups(
             current_candle=candle,
             current_index=current_index,
+        )
+
+        # --------------------------------------------------
+        # 7. CHOOSE MODEL + BUILD TRADE PLAN
+        # --------------------------------------------------
+
+        (
+            selected_setup,
+            both_sides,
+            trade_plan,
+        ) = self._build_trade_output(
+            current_time=candle.timestamp,
         )
 
         previous_completed_htf = None
@@ -476,17 +579,39 @@ class FractalEngine:
             )
 
         # --------------------------------------------------
-        # 7. RETURN CURRENT STATE
+        # 8. SNAPSHOT
         # --------------------------------------------------
+
         return EngineSnapshot(
             bar_index=current_index,
-            lower_timeframe=self.lower_timeframe,
-            higher_timeframe=self.higher_timeframe,
-            developing_htf=developing_htf,
-            previous_completed_htf=previous_completed_htf,
-            bearish_setup=self.live_bearish,
-            bullish_setup=self.live_bullish,
+            lower_timeframe=(
+                self.lower_timeframe
+            ),
+            higher_timeframe=(
+                self.higher_timeframe
+            ),
+            developing_htf=(
+                developing_htf
+            ),
+            previous_completed_htf=(
+                previous_completed_htf
+            ),
+            bearish_setup=(
+                self.live_bearish
+            ),
+            bullish_setup=(
+                self.live_bullish
+            ),
             completed_setups=tuple(
                 self.completed_setups
+            ),
+            selected_setup=(
+                selected_setup
+            ),
+            both_sides=(
+                both_sides
+            ),
+            trade_plan=(
+                trade_plan
             ),
         )
