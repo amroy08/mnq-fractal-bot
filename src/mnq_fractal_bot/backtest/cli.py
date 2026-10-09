@@ -5,12 +5,24 @@ from mnq_fractal_bot.backtest.audit_export import (
     export_signal_audits,
 )
 
+from mnq_fractal_bot.backtest.outcomes import (
+    build_signal_outcomes,
+)
+
+from mnq_fractal_bot.backtest.outcomes_export import (
+    export_signal_outcomes,
+)
+
 from mnq_fractal_bot.backtest.runner import (
     BacktestRunner,
 )
 
 from mnq_fractal_bot.data.csv_loader import (
     load_candles_from_csv,
+)
+
+from mnq_fractal_bot.risk.trade_filter import (
+    TradeFilterConfig,
 )
 
 
@@ -28,13 +40,70 @@ def format_percentage(
 
 def print_report(
     result,
+    outcomes,
+    trade_filter_config,
 ) -> None:
     stats = result.stats
+
+    submitted_count = sum(
+        1
+        for outcome in outcomes
+        if outcome.order_submitted
+    )
+
+    filled_count = sum(
+        1
+        for outcome in outcomes
+        if outcome.entry_filled
+    )
+
+    target_count = sum(
+        1
+        for outcome in outcomes
+        if outcome.final_status == "TARGET"
+    )
+
+    stopped_count = sum(
+        1
+        for outcome in outcomes
+        if outcome.final_status == "STOPPED"
+    )
+
+    expired_count = sum(
+        1
+        for outcome in outcomes
+        if outcome.final_status == "EXPIRED"
+    )
+
+    cancelled_count = sum(
+        1
+        for outcome in outcomes
+        if outcome.final_status == "CANCELLED"
+    )
 
     print()
     print("=" * 60)
     print("MNQ FRACTAL MODEL - PAPER BACKTEST")
     print("=" * 60)
+
+    print()
+    print("FILTER")
+    print("-" * 60)
+
+    print(
+        f"C3 allowed        : "
+        f"{trade_filter_config.allow_c3}"
+    )
+
+    print(
+        f"C4 allowed        : "
+        f"{trade_filter_config.allow_c4}"
+    )
+
+    print(
+        f"Max stop points   : "
+        f"{trade_filter_config.max_stop_points}"
+    )
 
     print()
     print("DATA")
@@ -48,6 +117,40 @@ def print_report(
     print(
         f"Signals audited   : "
         f"{len(result.signal_audits):,}"
+    )
+
+    print()
+    print("SIGNAL OUTCOMES")
+    print("-" * 60)
+
+    print(
+        f"Orders submitted  : "
+        f"{submitted_count}"
+    )
+
+    print(
+        f"Entries filled    : "
+        f"{filled_count}"
+    )
+
+    print(
+        f"Targets hit       : "
+        f"{target_count}"
+    )
+
+    print(
+        f"Stops hit         : "
+        f"{stopped_count}"
+    )
+
+    print(
+        f"Expired           : "
+        f"{expired_count}"
+    )
+
+    print(
+        f"Cancelled         : "
+        f"{cancelled_count}"
     )
 
     print()
@@ -67,11 +170,6 @@ def print_report(
     print(
         f"Losses            : "
         f"{stats.losses}"
-    )
-
-    print(
-        f"Breakeven         : "
-        f"{stats.breakeven}"
     )
 
     print(
@@ -101,16 +199,6 @@ def print_report(
     print(
         f"Average trade     : "
         f"{format_money(stats.average_trade)}"
-    )
-
-    print(
-        f"Average winner    : "
-        f"{format_money(stats.average_win)}"
-    )
-
-    print(
-        f"Average loser     : "
-        f"{format_money(stats.average_loss)}"
     )
 
     print()
@@ -154,36 +242,11 @@ def print_report(
     )
 
     print()
-
-    if result.trade_log:
-        print("TRADE LOG")
-        print("-" * 60)
-
-        for trade in result.trade_log:
-            print(
-                f"#{trade.trade_number} | "
-                f"{trade.direction} | "
-                f"Entry {trade.entry_price:.2f} | "
-                f"Exit {trade.exit_price:.2f} | "
-                f"{trade.exit_reason} | "
-                f"P&L "
-                f"{format_money(trade.gross_pnl)}"
-            )
-
-    else:
-        print(
-            "No completed trades were generated "
-            "from this dataset."
-        )
-
-    print()
     print("=" * 60)
-
     print(
         "PAPER BACKTEST ONLY - "
         "NO LIVE BROKER ORDERS"
     )
-
     print("=" * 60)
 
 
@@ -191,6 +254,7 @@ def run_csv_backtest(
     csv_path: str | Path,
     lower_timeframe: str = "5m",
     starting_balance: float = 25_000.0,
+    trade_filter_config: TradeFilterConfig | None = None,
 ):
     candles = load_candles_from_csv(
         csv_path
@@ -202,6 +266,9 @@ def run_csv_backtest(
         sl_buffer_ticks=2,
         point_value=2.0,
         starting_balance=starting_balance,
+        trade_filter_config=(
+            trade_filter_config
+        ),
     )
 
     return runner.run(
@@ -213,15 +280,12 @@ def main():
     parser = argparse.ArgumentParser(
         description=(
             "Run the MNQ Fractal Model "
-            "paper backtest from CSV."
+            "paper backtest."
         )
     )
 
     parser.add_argument(
         "csv_path",
-        help=(
-            "Path to historical MNQ CSV."
-        ),
     )
 
     parser.add_argument(
@@ -240,23 +304,60 @@ def main():
     )
 
     parser.add_argument(
+        "--c3-only",
+        action="store_true",
+        help=(
+            "Allow C3 trades and "
+            "disable C4 trades."
+        ),
+    )
+
+    parser.add_argument(
+        "--max-stop-points",
+        type=float,
+        default=None,
+        help=(
+            "Reject trades whose entry-to-stop "
+            "distance exceeds this many points."
+        ),
+    )
+
+    parser.add_argument(
         "--audit-output",
         default=(
             "data/fractal_signal_audit.csv"
         ),
-        help=(
-            "Where to save the Fractal "
-            "signal audit CSV."
+    )
+
+    parser.add_argument(
+        "--outcomes-output",
+        default=(
+            "data/fractal_signal_outcomes.csv"
         ),
     )
 
     args = parser.parse_args()
+
+    trade_filter_config = (
+        TradeFilterConfig(
+            allow_c3=True,
+            allow_c4=(
+                not args.c3_only
+            ),
+            max_stop_points=(
+                args.max_stop_points
+            ),
+        )
+    )
 
     result = run_csv_backtest(
         csv_path=args.csv_path,
         lower_timeframe=args.timeframe,
         starting_balance=(
             args.starting_balance
+        ),
+        trade_filter_config=(
+            trade_filter_config
         ),
     )
 
@@ -265,21 +366,45 @@ def main():
         output_path=args.audit_output,
     )
 
+    outcomes = build_signal_outcomes(
+        audits=result.signal_audits,
+        broker_events=result.broker_events,
+    )
+
+    outcomes_path = (
+        export_signal_outcomes(
+            outcomes=outcomes,
+            output_path=(
+                args.outcomes_output
+            ),
+        )
+    )
+
     print_report(
-        result
+        result=result,
+        outcomes=outcomes,
+        trade_filter_config=(
+            trade_filter_config
+        ),
     )
 
     print()
     print(
         "Signal audit saved to:"
     )
-
     print(
         audit_path
+    )
+
+    print()
+
+    print(
+        "Signal outcomes saved to:"
+    )
+    print(
+        outcomes_path
     )
 
 
 if __name__ == "__main__":
     main()
-    
-    
