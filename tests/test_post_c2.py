@@ -60,11 +60,12 @@ def test_bearish_break_before_cisd_requires_replacement():
     assert result.setup.is_invalid is False
 
 
-def test_bearish_break_after_cisd_invalidates():
+def test_bearish_break_after_cisd_invalidates_and_cascades():
     setup = Setup(
         is_bullish=False,
         is_post_c2=True,
         c2_extreme=120,
+        c2_mid=115,
         cisd_triggered=True,
     )
 
@@ -77,15 +78,61 @@ def test_bearish_break_after_cisd_invalidates():
         )
     ]
 
+    old_setup = setup
+
     result = update_post_c2_setup(
         setup=setup,
         candles=candles,
         current_index=0,
     )
 
-    assert result.replacement_required is False
-    assert result.setup.is_invalid is True
+    # Pine invalidates the OLD setup.
+    assert (
+        old_setup.is_invalid
+        is True
+    )
 
+    # But Pine also immediately cascades
+    # into a fresh bearish C2 setup.
+    assert (
+        result.replacement_required
+        is True
+    )
+
+    assert (
+        result.setup
+        is not old_setup
+    )
+
+    assert (
+        result.setup.is_bullish
+        is False
+    )
+
+    assert (
+        result.setup.is_post_c2
+        is False
+    )
+
+    assert (
+        result.setup.is_invalid
+        is False
+    )
+
+    assert (
+        result.setup.sweep_price
+        == 120
+    )
+
+    assert (
+        result.setup.tracked_extreme
+        == 121
+    )
+
+    assert (
+        result.setup.extreme_bar_index
+        == 0
+    )
 
 def test_bullish_break_before_cisd_requires_replacement():
     setup = Setup(
@@ -146,3 +193,4 @@ def test_bearish_cisd_can_trigger_during_c3():
     assert result.setup.cisd_triggered is True
     assert result.setup.cisd_end_index == 0
     assert result.setup.c3_zone_set is True
+    

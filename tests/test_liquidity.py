@@ -165,3 +165,63 @@ def test_wrong_side_targets_are_rejected():
     assert targets.c0 is None
     assert targets.has_valid_target is False
     assert targets.preferred_target is None
+
+
+def test_bullish_equal_low_uses_older_high():
+    setup = Setup(
+        is_bullish=True,
+    )
+
+    c1 = make_candle(
+        100,
+        110,
+        90,
+        105,
+    )
+
+    c0 = make_candle(
+        95,
+        120,
+        90,
+        100,
+    )
+
+    result = set_formation_liquidity(
+        setup=setup,
+        c1=c1,
+        c0=c0,
+    )
+
+    # Equal low at 90: formation swing high is c0.high (120)
+    assert result.liq_c1_price == 120
+    assert result.liq_c0_price is None
+
+
+def test_bearish_equal_high_uses_older_low():
+    setup = Setup(
+        is_bullish=False,
+    )
+
+    c1 = make_candle(
+        110,
+        130,
+        100,
+        115,
+    )
+
+    c0 = make_candle(
+        115,
+        130,
+        90,
+        110,
+    )
+
+    result = set_formation_liquidity(
+        setup=setup,
+        c1=c1,
+        c0=c0,
+    )
+
+    # Equal high at 130: formation swing low is c0.low (90)
+    assert result.liq_c1_price == 90
+    assert result.liq_c0_price is None

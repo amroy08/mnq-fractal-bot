@@ -47,23 +47,41 @@ def set_formation_liquidity(
 
     if setup.is_bullish:
         # Bullish target is liquidity above price.
-        setup.liq_c1_price = c1.high
-
+        # If previous candle has an equal low with older candle, the swept level
+        # originated from the older candle, so its higher extreme is the true formation swing.
         if (
             c0 is not None
+            and c1.low == c0.low
             and c0.high > c1.high
         ):
-            setup.liq_c0_price = c0.high
+            setup.liq_c1_price = c0.high
+        else:
+            setup.liq_c1_price = c1.high
+
+            if (
+                c0 is not None
+                and c0.high > c1.high
+            ):
+                setup.liq_c0_price = c0.high
 
     else:
         # Bearish target is liquidity below price.
-        setup.liq_c1_price = c1.low
-
+        # If previous candle has an equal high with older candle, the swept level
+        # originated from the older candle, so its lower extreme is the true formation swing.
         if (
             c0 is not None
+            and c1.high == c0.high
             and c0.low < c1.low
         ):
-            setup.liq_c0_price = c0.low
+            setup.liq_c1_price = c0.low
+        else:
+            setup.liq_c1_price = c1.low
+
+            if (
+                c0 is not None
+                and c0.low < c1.low
+            ):
+                setup.liq_c0_price = c0.low
 
     return setup
 
