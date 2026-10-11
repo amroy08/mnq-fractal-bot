@@ -13,6 +13,10 @@ from mnq_fractal_bot.execution.paper_broker import (
 )
 from mnq_fractal_bot.models.candle import Candle
 from mnq_fractal_bot.models.setup import Setup
+from mnq_fractal_bot.risk.risk_guard import (
+    RiskGuard,
+    RiskGuardConfig,
+)
 from mnq_fractal_bot.risk.trade_filter import (
     TradeFilterConfig,
     evaluate_trade_plan,
@@ -65,6 +69,9 @@ class BotRunner:
         trade_filter_config: (
             TradeFilterConfig | None
         ) = None,
+        risk_guard_config: (
+            RiskGuardConfig | None
+        ) = None,
         trading_enabled: bool = True,
     ):
         self.engine = FractalEngine(
@@ -92,6 +99,12 @@ class BotRunner:
             if trade_filter_config
             is not None
             else TradeFilterConfig()
+        )
+
+        self.risk_guard = (
+            RiskGuard(config=risk_guard_config)
+            if risk_guard_config is not None
+            else None
         )
 
         # Normal backtests:
@@ -487,6 +500,15 @@ class BotRunner:
                     ),
                 )
 
+                if (
+                    self.risk_guard is not None
+                    and broker_event.gross_pnl is not None
+                ):
+                    self.risk_guard.on_trade_closed(
+                        pnl=broker_event.gross_pnl,
+                        exit_time=candle.timestamp,
+                    )
+
         # ==================================================
         # 2. FRACTAL MODEL
         #
@@ -648,7 +670,16 @@ class BotRunner:
                 )
             )
 
-            if (
+            # ==============================================
+            # RISK GUARD LOCK (PROP-FIRM / DRAWDOWN SHIELD)
+            # ==============================================
+            risk_ok = True
+            if self.risk_guard is not None:
+                risk_check = self.risk_guard.check_new_order(candle.timestamp)
+                if not risk_check.allowed:
+                    risk_ok = False
+
+            if risk_ok and (
                 expires_at is None
                 or (
                     candle.timestamp
