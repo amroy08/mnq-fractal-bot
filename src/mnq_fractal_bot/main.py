@@ -1,54 +1,27 @@
-from datetime import datetime, timezone
+import argparse
+import sys
+from pathlib import Path
 
-from mnq_fractal_bot.data.csv_loader import load_candles_from_csv
-from mnq_fractal_bot.models.candle import Candle
+from mnq_fractal_bot.execution.paper_stream_cli import parse_args, run_paper_stream
 
 
-def main():
-    print("=" * 40)
-    print("MNQ FRACTAL BOT")
-    print("=" * 40)
-    print("Environment: PAPER")
-    print("Status: STARTING")
-    print("Broker connection: DISABLED")
-    print("Live orders: DISABLED")
-    print("=" * 40)
+def main() -> None:
+    """
+    Main entrypoint for MNQ Fractal Bot.
+    Runs local forward paper trading stream by default.
+    """
+    if len(sys.argv) == 1:
+        # Default behavior: run paper stream on standard dataset
+        default_csv = Path("data/mnq_5m_real.csv")
+        if default_csv.exists():
+            args = parse_args([str(default_csv), "--warmup-candles", "500"])
+            sys.exit(run_paper_stream(args))
+        else:
+            sample_csv = Path("data/sample_mnq_5m.csv")
+            args = parse_args([str(sample_csv), "--warmup-candles", "0"])
+            sys.exit(run_paper_stream(args))
 
-    candle = Candle(
-        timestamp=datetime(2026, 10, 9, 13, 45, tzinfo=timezone.utc),
-        open=31210.00,
-        high=31235.25,
-        low=31202.50,
-        close=31228.75,
-        volume=4850,
-    )
-
-    print()
-    print("SAMPLE MNQ CANDLE")
-    print(f"Time:   {candle.timestamp}")
-    print(f"Open:   {candle.open}")
-    print(f"High:   {candle.high}")
-    print(f"Low:    {candle.low}")
-    print(f"Close:  {candle.close}")
-    print(f"Volume: {candle.volume}")
-
-    candles = load_candles_from_csv(
-        "data/sample_mnq_5m.csv"
-    )
-
-    print()
-    print("CSV DATA TEST")
-    print(f"Candles loaded: {len(candles)}")
-
-    for csv_candle in candles:
-        print(
-            csv_candle.timestamp,
-            csv_candle.open,
-            csv_candle.high,
-            csv_candle.low,
-            csv_candle.close,
-            csv_candle.volume,
-        )
+    sys.exit(run_paper_stream(parse_args()))
 
 
 if __name__ == "__main__":
