@@ -177,3 +177,37 @@ class DiscordNotifier:
             color=color,
             fields=fields,
         )
+
+    def notify_session_summary(
+        self,
+        total_trades: int,
+        wins: int,
+        losses: int,
+        win_rate: float,
+        gross_pnl: float,
+        initial_balance: float,
+        final_balance: float,
+        period_label: str = "Today's Session",
+    ) -> DiscordNotificationResult:
+        is_positive = gross_pnl > 0
+        is_even = gross_pnl == 0
+        sign = "+" if is_positive else ""
+        color = 0x2ECC71 if is_positive else (0xF1C40F if is_even else 0xE74C3C)
+        emoji = "📈" if is_positive else ("⚖️" if is_even else "📉")
+
+        fields = [
+            {"name": "Session P&L", "value": f"**{sign}${gross_pnl:,.2f}**", "inline": True},
+            {"name": "Win Rate", "value": f"**{win_rate:.1f}%** ({wins}W / {losses}L)", "inline": True},
+            {"name": "Total Trades", "value": f"`{total_trades}`", "inline": True},
+            {"name": "Starting Balance", "value": f"`${initial_balance:,.2f}`", "inline": True},
+            {"name": "Current Balance", "value": f"**`${final_balance:,.2f}`**", "inline": True},
+            {"name": "Mode", "value": "`Paper Simulation`", "inline": True},
+        ]
+
+        return self.send_embed(
+            title=f"{emoji} [PAPER] {period_label} Account Summary",
+            description=f"**Daily Performance Recap**",
+            color=color,
+            fields=fields,
+            footer="MNQ Fractal Bot — Daily P&L Recap",
+        )

@@ -304,6 +304,18 @@ def run_paper_stream(args: argparse.Namespace) -> int:
     print(f"Final Balance      : ${args.initial_balance + total_gross:,.2f}")
     print("=" * 72)
 
+    if notifier.is_configured:
+        notifier.notify_session_summary(
+            total_trades=len(closed_trades),
+            wins=len(wins),
+            losses=len(losses),
+            win_rate=win_rate,
+            gross_pnl=total_gross,
+            initial_balance=args.initial_balance,
+            final_balance=args.initial_balance + total_gross,
+            period_label="Day's Session",
+        )
+
     return 0
 
 
