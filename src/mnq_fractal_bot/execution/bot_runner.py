@@ -66,6 +66,7 @@ class BotRunner:
         tick_size: float = 0.25,
         sl_buffer_ticks: int = 2,
         point_value: float = 2.0,
+        max_hold_minutes: float | None = None,
         trade_filter_config: (
             TradeFilterConfig | None
         ) = None,
@@ -91,6 +92,9 @@ class BotRunner:
         self.broker = PaperBroker(
             point_value=(
                 point_value
+            ),
+            max_hold_minutes=(
+                max_hold_minutes
             ),
         )
 

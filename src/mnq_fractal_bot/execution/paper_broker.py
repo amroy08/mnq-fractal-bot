@@ -76,6 +76,7 @@ class PaperBroker:
     def __init__(
         self,
         point_value: float = MNQ_POINT_VALUE,
+        max_hold_minutes: float | None = None,
     ):
         if point_value <= 0:
             raise ValueError(
@@ -83,6 +84,7 @@ class PaperBroker:
             )
 
         self.point_value = point_value
+        self.max_hold_minutes = max_hold_minutes
 
         # V1 = exactly one MNQ.
         self.quantity = 1
@@ -409,6 +411,20 @@ class PaperBroker:
                 exit_price=position.target_price,
                 exit_reason="TARGET",
             )
+
+        # --------------------------------------------------
+        # TIME-STOP / STALE POSITION TIMEOUT
+        # --------------------------------------------------
+        if self.max_hold_minutes is not None:
+            hold_minutes = (
+                candle.timestamp - position.entry_time
+            ).total_seconds() / 60.0
+            if hold_minutes >= self.max_hold_minutes:
+                return self._close_position(
+                    candle=candle,
+                    exit_price=candle.close,
+                    exit_reason="TIME_STOP",
+                )
 
         return None
 
