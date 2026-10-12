@@ -44,6 +44,20 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "--min-stop-points",
+        type=float,
+        default=None,
+        help="Minimum required stop loss distance in points to filter tight-stop noise (e.g. 20.0)",
+    )
+
+    parser.add_argument(
+        "--max-target-points",
+        type=float,
+        default=None,
+        help="Maximum target distance in points to focus on high-probability near targets (e.g. 35.0)",
+    )
+
+    parser.add_argument(
         "--c3-only",
         action="store_true",
         default=True,
@@ -76,7 +90,10 @@ def run_paper_stream(args: argparse.Namespace) -> int:
     print(f"Data file       : {args.csv_path}")
     print(f"Warmup candles  : {args.warmup_candles}")
     print(f"Initial balance : ${args.initial_balance:,.2f}")
-    print(f"Filter          : C3 only, Max stop {args.max_stop_points} pts")
+    filter_desc = f"C3 only, Stop [{args.min_stop_points or 0:.0f} - {args.max_stop_points:.0f} pts]"
+    if args.max_target_points:
+        filter_desc += f", Max Target {args.max_target_points:.0f} pts"
+    print(f"Filter          : {filter_desc}")
     print("Broker mode     : LOCAL PAPER SIMULATION ONLY (NO REAL ORDERS)")
     print("=" * 72)
 
@@ -102,6 +119,8 @@ def run_paper_stream(args: argparse.Namespace) -> int:
         allow_c3=True,
         allow_c4=not args.c3_only,
         max_stop_points=args.max_stop_points,
+        min_stop_points=args.min_stop_points,
+        max_target_points=args.max_target_points,
     )
 
     runner = BotRunner(

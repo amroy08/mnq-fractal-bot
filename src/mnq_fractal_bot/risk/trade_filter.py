@@ -19,6 +19,17 @@ class TradeFilterConfig:
     # None = no stop-distance restriction.
     max_stop_points: float | None = None
 
+    # Minimum distance between entry and stop,
+    # measured in MNQ points to filter out tight-stop chop.
+    #
+    # None = no minimum stop restriction.
+    min_stop_points: float | None = None
+
+    # Maximum distance to target in MNQ points to prioritize high-probability near targets.
+    #
+    # None = no target distance restriction.
+    max_target_points: float | None = None
+
     def __post_init__(self):
         if (
             self.max_stop_points is not None
@@ -26,6 +37,22 @@ class TradeFilterConfig:
         ):
             raise ValueError(
                 "max_stop_points cannot be negative."
+            )
+
+        if (
+            self.min_stop_points is not None
+            and self.min_stop_points < 0
+        ):
+            raise ValueError(
+                "min_stop_points cannot be negative."
+            )
+
+        if (
+            self.max_target_points is not None
+            and self.max_target_points < 0
+        ):
+            raise ValueError(
+                "max_target_points cannot be negative."
             )
 
 
@@ -127,6 +154,41 @@ def evaluate_trade_plan(
             reason="MAX_STOP_EXCEEDED",
             stop_distance_points=stop_distance,
         )
+
+    # ==================================================
+    # MIN STOP FILTER
+    # ==================================================
+
+    if (
+        config.min_stop_points is not None
+        and stop_distance
+        < config.min_stop_points
+    ):
+        return TradeFilterDecision(
+            allowed=False,
+            reason="MIN_STOP_NOT_REACHED",
+            stop_distance_points=stop_distance,
+        )
+
+    # ==================================================
+    # MAX TARGET FILTER (HIGH PROBABILITY TARGET FILTER)
+    # ==================================================
+
+    if (
+        config.max_target_points is not None
+        and plan.preferred_target is not None
+    ):
+        target_distance = abs(
+            plan.preferred_target
+            - plan.entry_price
+        )
+
+        if target_distance > config.max_target_points:
+            return TradeFilterDecision(
+                allowed=False,
+                reason="MAX_TARGET_EXCEEDED",
+                stop_distance_points=stop_distance,
+            )
 
     # ==================================================
     # ALLOWED

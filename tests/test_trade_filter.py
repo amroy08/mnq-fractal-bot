@@ -14,6 +14,7 @@ def make_plan(
     entry_name="C3 ENTRY ZONE",
     entry_price=100,
     stop_price=140,
+    preferred_target=160,
     bot_trade_ready=True,
 ):
     return TradePlan(
@@ -27,9 +28,9 @@ def make_plan(
 
         stop_price=stop_price,
 
-        tp_c1=160,
+        tp_c1=preferred_target,
         tp_c0=180,
-        preferred_target=160,
+        preferred_target=preferred_target,
 
         model_ready=True,
         has_valid_target=True,
@@ -163,3 +164,31 @@ def test_negative_max_stop_is_rejected():
         TradeFilterConfig(
             max_stop_points=-1,
         )
+
+
+def test_min_stop_points_filter():
+    config = TradeFilterConfig(min_stop_points=20.0)
+    tight_plan = make_plan(entry_price=100.0, stop_price=110.0)  # 10 pts stop
+    valid_plan = make_plan(entry_price=100.0, stop_price=125.0)  # 25 pts stop
+
+    decision_tight = evaluate_trade_plan(tight_plan, config)
+    assert decision_tight.allowed is False
+    assert decision_tight.reason == "MIN_STOP_NOT_REACHED"
+
+    decision_valid = evaluate_trade_plan(valid_plan, config)
+    assert decision_valid.allowed is True
+    assert decision_valid.reason == "ALLOWED"
+
+
+def test_max_target_points_filter():
+    config = TradeFilterConfig(max_target_points=30.0)
+    far_plan = make_plan(entry_price=100.0, stop_price=80.0, preferred_target=145.0)  # 45 pts target
+    near_plan = make_plan(entry_price=100.0, stop_price=80.0, preferred_target=125.0)  # 25 pts target
+
+    decision_far = evaluate_trade_plan(far_plan, config)
+    assert decision_far.allowed is False
+    assert decision_far.reason == "MAX_TARGET_EXCEEDED"
+
+    decision_near = evaluate_trade_plan(near_plan, config)
+    assert decision_near.allowed is True
+    assert decision_near.reason == "ALLOWED"
