@@ -8,6 +8,7 @@ from mnq_fractal_bot.data.feed_audit import audit_candle_feed_gaps
 from mnq_fractal_bot.execution.bot_runner import BotRunner
 from mnq_fractal_bot.execution.paper_broker import MNQ_POINT_VALUE
 from mnq_fractal_bot.execution.stream_session import PaperStreamSession, StreamEvent
+from mnq_fractal_bot.risk.risk_guard import RiskGuard, RiskGuardConfig
 from mnq_fractal_bot.risk.trade_filter import TradeFilterConfig
 
 
@@ -65,6 +66,35 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "--exclude-hours-utc",
+        type=int,
+        nargs="*",
+        default=[],
+        help="UTC hours (0-23) to exclude from entering trades (e.g. --exclude-hours-utc 3 4 9)",
+    )
+
+    parser.add_argument(
+        "--max-consecutive-losses",
+        type=int,
+        default=None,
+        help="Circuit breaker: halt new trades after N consecutive losses (e.g. 3)",
+    )
+
+    parser.add_argument(
+        "--max-daily-loss",
+        type=float,
+        default=None,
+        help="Daily loss limit in dollars to lock trading for the day (e.g. 500.0)",
+    )
+
+    parser.add_argument(
+        "--max-drawdown",
+        type=float,
+        default=None,
+        help="Trailing drawdown limit in dollars from peak balance (e.g. 1500.0)",
+    )
+
+    parser.add_argument(
         "--initial-balance",
         type=float,
         default=25000.0,
@@ -93,6 +123,8 @@ def run_paper_stream(args: argparse.Namespace) -> int:
     filter_desc = f"C3 only, Stop [{args.min_stop_points or 0:.0f} - {args.max_stop_points:.0f} pts]"
     if args.max_target_points:
         filter_desc += f", Max Target {args.max_target_points:.0f} pts"
+    if args.exclude_hours_utc:
+        filter_desc += f", Exclude UTC {args.exclude_hours_utc}"
     print(f"Filter          : {filter_desc}")
     print("Broker mode     : LOCAL PAPER SIMULATION ONLY (NO REAL ORDERS)")
     print("=" * 72)
@@ -123,9 +155,24 @@ def run_paper_stream(args: argparse.Namespace) -> int:
         max_target_points=args.max_target_points,
     )
 
+    risk_guard_config = None
+    if (
+        args.exclude_hours_utc
+        or args.max_consecutive_losses is not None
+        or args.max_daily_loss is not None
+        or args.max_drawdown is not None
+    ):
+        risk_guard_config = RiskGuardConfig(
+            excluded_hours_utc=tuple(args.exclude_hours_utc),
+            max_consecutive_losses=args.max_consecutive_losses,
+            max_daily_loss=args.max_daily_loss,
+            max_total_drawdown=args.max_drawdown,
+        )
+
     runner = BotRunner(
         trade_filter_config=filter_config,
         point_value=MNQ_POINT_VALUE,
+        risk_guard_config=risk_guard_config,
     )
 
     live_trade_count = 0

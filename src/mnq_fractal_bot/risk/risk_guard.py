@@ -8,6 +8,7 @@ class RiskGuardConfig:
     max_total_drawdown: float | None = 1500.0  # Max trailing drawdown from peak balance ($)
     max_consecutive_losses: int | None = 3    # Circuit breaker on consecutive losing trades
     max_contracts: int = 1                     # Position size cap (contracts)
+    excluded_hours_utc: tuple[int, ...] = ()   # Hours (UTC 0-23) during which new orders are blocked
 
 
 @dataclass(frozen=True)
@@ -93,6 +94,13 @@ class RiskGuard:
             return RiskCheckResult(
                 allowed=False,
                 reason=f"CONSECUTIVE_LOSS_LIMIT_REACHED: {self.consecutive_losses} consecutive losses",
+            )
+
+        # 4. Session Hours Filter
+        if current_time.hour in self.config.excluded_hours_utc:
+            return RiskCheckResult(
+                allowed=False,
+                reason=f"SESSION_HOUR_FILTER: {current_time.hour:02d}:00 UTC is an excluded chop hour",
             )
 
         return RiskCheckResult(allowed=True, reason="ALLOWED")
