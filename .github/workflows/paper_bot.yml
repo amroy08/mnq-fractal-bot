@@ -1,0 +1,37 @@
+name: MNQ Fractal Bot — Cloud Paper Runner
+
+on:
+  schedule:
+    # Runs on schedule (e.g., every hour during active CME sessions)
+    - cron: '0 * * * *'
+  workflow_dispatch:
+    # Allows manual one-click launch from GitHub Actions tab
+
+jobs:
+  run-paper-bot:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+
+      - name: Execute Paper Simulation & Stream Live Alerts
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+        run: |
+          python -m mnq_fractal_bot.execution.paper_stream_cli data/mnq_5m_real.csv \
+            --min-stop-points 22 \
+            --max-stop-points 35 \
+            --exclude-hours-utc 3 4 9 \
+            --max-hold-minutes 180 \
+            --discord-webhook "${DISCORD_WEBHOOK:-https://discord.com/api/webhooks/1559122213980995637/VGqK-9RYzrw1vx1H-0pfblxzyGZKXEylBLID_rK_ZcF606gJCWAvBt4Y83ZAXWtqDQ6R}"
