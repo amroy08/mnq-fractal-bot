@@ -116,6 +116,13 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
         help="Discord Webhook URL for live paper trade alerts (embeds sent to channel)",
     )
 
+    parser.add_argument(
+        "--send-summary",
+        action="store_true",
+        default=False,
+        help="Send the daily account summary embed to Discord at the end of the run",
+    )
+
     return parser.parse_args(args)
 
 
@@ -304,7 +311,7 @@ def run_paper_stream(args: argparse.Namespace) -> int:
     print(f"Final Balance      : ${args.initial_balance + total_gross:,.2f}")
     print("=" * 72)
 
-    if notifier.is_configured:
+    if notifier.is_configured and args.send_summary:
         notifier.notify_session_summary(
             total_trades=len(closed_trades),
             wins=len(wins),
