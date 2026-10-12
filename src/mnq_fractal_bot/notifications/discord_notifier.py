@@ -66,7 +66,14 @@ class DiscordNotifier:
         )
 
         try:
-            with urllib.request.urlopen(req, timeout=5) as response:
+            import ssl
+            try:
+                import certifi
+                ssl_ctx = ssl.create_default_context(cafile=certifi.where())
+            except Exception:
+                ssl_ctx = ssl.create_default_context()
+
+            with urllib.request.urlopen(req, timeout=5, context=ssl_ctx) as response:
                 return DiscordNotificationResult(
                     success=response.status in (200, 204),
                     status_code=response.status,
