@@ -25,6 +25,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e .
 
+      - name: Fetch Live Up-to-the-Minute MNQ Market Data
+        run: |
+          python -m mnq_fractal_bot.data.live_yahoo_fetcher
+
       - name: Execute Paper Simulation & Stream Live Alerts
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
@@ -36,7 +40,7 @@ jobs:
             SEND_SUMMARY_FLAG="--send-summary"
           fi
 
-          python -m mnq_fractal_bot.execution.paper_stream_cli data/mnq_5m_real.csv \
+          python -m mnq_fractal_bot.execution.paper_stream_cli data/mnq_5m_live.csv \
             --min-stop-points 22 \
             --max-stop-points 35 \
             --exclude-hours-utc 3 4 9 \
