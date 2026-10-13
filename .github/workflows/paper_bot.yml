@@ -41,6 +41,8 @@ jobs:
           fi
 
           python -m mnq_fractal_bot.execution.paper_stream_cli data/mnq_5m_live.csv \
+            --initial-balance 25000 \
+            --max-drawdown 1000 \
             --min-stop-points 22 \
             --max-stop-points 35 \
             --exclude-hours-utc 3 4 9 \
