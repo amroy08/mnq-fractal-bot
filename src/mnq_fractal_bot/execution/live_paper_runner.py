@@ -42,15 +42,15 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--min-stop-points",
         type=float,
-        default=22.0,
-        help="Minimum required stop loss distance in points (default: 22.0)",
+        default=20.0,
+        help="Minimum required stop loss distance in points (default: 20.0)",
     )
 
     parser.add_argument(
         "--max-stop-points",
         type=float,
-        default=35.0,
-        help="Maximum allowed stop loss distance in points (default: 35.0)",
+        default=45.0,
+        help="Maximum allowed stop loss distance in points (default: 45.0)",
     )
 
     parser.add_argument(
