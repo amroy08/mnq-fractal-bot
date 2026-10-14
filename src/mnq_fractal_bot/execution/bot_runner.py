@@ -67,6 +67,7 @@ class BotRunner:
         sl_buffer_ticks: int = 2,
         point_value: float = 2.0,
         max_hold_minutes: float | None = None,
+        breakeven_trigger_r: float | None = None,
         trade_filter_config: (
             TradeFilterConfig | None
         ) = None,
@@ -95,6 +96,9 @@ class BotRunner:
             ),
             max_hold_minutes=(
                 max_hold_minutes
+            ),
+            breakeven_trigger_r=(
+                breakeven_trigger_r
             ),
         )
 

@@ -103,6 +103,13 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "--breakeven-trigger-r",
+        type=float,
+        default=None,
+        help="Dynamic Breakeven: trail stop to entry + 2 ticks once trade reaches +N Risk (e.g. 1.0)",
+    )
+
+    parser.add_argument(
         "--initial-balance",
         type=float,
         default=25000.0,
@@ -195,6 +202,7 @@ def run_paper_stream(args: argparse.Namespace) -> int:
         trade_filter_config=filter_config,
         point_value=MNQ_POINT_VALUE,
         max_hold_minutes=args.max_hold_minutes,
+        breakeven_trigger_r=args.breakeven_trigger_r,
         risk_guard_config=risk_guard_config,
     )
 

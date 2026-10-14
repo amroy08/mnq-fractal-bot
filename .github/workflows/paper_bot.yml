@@ -43,6 +43,9 @@ jobs:
           python -m mnq_fractal_bot.execution.paper_stream_cli data/mnq_5m_live.csv \
             --initial-balance 25000 \
             --max-drawdown 1000 \
+            --max-daily-loss 150 \
+            --max-consecutive-losses 2 \
+            --breakeven-trigger-r 1.0 \
             --min-stop-points 20 \
             --max-stop-points 45 \
             --exclude-hours-utc 3 4 9 \

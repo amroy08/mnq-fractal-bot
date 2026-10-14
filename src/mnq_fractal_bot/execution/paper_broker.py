@@ -77,6 +77,7 @@ class PaperBroker:
         self,
         point_value: float = MNQ_POINT_VALUE,
         max_hold_minutes: float | None = None,
+        breakeven_trigger_r: float | None = None,
     ):
         if point_value <= 0:
             raise ValueError(
@@ -85,6 +86,7 @@ class PaperBroker:
 
         self.point_value = point_value
         self.max_hold_minutes = max_hold_minutes
+        self.breakeven_trigger_r = breakeven_trigger_r
 
         # V1 = exactly one MNQ.
         self.quantity = 1
@@ -92,6 +94,8 @@ class PaperBroker:
         self.pending_order: PendingOrder | None = None
 
         self.position: OpenPosition | None = None
+        self.initial_risk_points: float | None = None
+        self.breakeven_activated: bool = False
 
         self.closed_trades: list[ClosedTrade] = []
 
@@ -276,6 +280,9 @@ class PaperBroker:
             entry_time=candle.timestamp,
         )
 
+        self.initial_risk_points = abs(order.entry_price - order.stop_price)
+        self.breakeven_activated = False
+
         self.pending_order = None
 
         return BrokerEvent(
@@ -355,6 +362,44 @@ class PaperBroker:
             return None
 
         position = self.position
+
+        # Dynamic Breakeven (+1R Trailing)
+        if (
+            self.breakeven_trigger_r is not None
+            and self.initial_risk_points is not None
+            and not self.breakeven_activated
+        ):
+            threshold = self.breakeven_trigger_r * self.initial_risk_points
+            if position.direction == "LONG":
+                # If high reached entry + threshold, move stop to entry + 0.50 (2 ticks profit)
+                if candle.high >= position.entry_price + threshold:
+                    new_stop = max(position.stop_price, position.entry_price + 0.50)
+                    self.position = OpenPosition(
+                        signal_id=position.signal_id,
+                        direction=position.direction,
+                        entry_price=position.entry_price,
+                        stop_price=new_stop,
+                        target_price=position.target_price,
+                        quantity=position.quantity,
+                        entry_time=position.entry_time,
+                    )
+                    position = self.position
+                    self.breakeven_activated = True
+            else:
+                # SHORT: If low reached entry - threshold, move stop to entry - 0.50
+                if candle.low <= position.entry_price - threshold:
+                    new_stop = min(position.stop_price, position.entry_price - 0.50)
+                    self.position = OpenPosition(
+                        signal_id=position.signal_id,
+                        direction=position.direction,
+                        entry_price=position.entry_price,
+                        stop_price=new_stop,
+                        target_price=position.target_price,
+                        quantity=position.quantity,
+                        entry_time=position.entry_time,
+                    )
+                    position = self.position
+                    self.breakeven_activated = True
 
         # ==================================================
         # LONG
