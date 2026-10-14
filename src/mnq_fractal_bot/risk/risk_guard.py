@@ -47,6 +47,7 @@ class RiskGuard:
         if self.current_day != trade_date:
             self.current_day = trade_date
             self.daily_pnl = 0.0
+            self.consecutive_losses = 0
 
         self.daily_pnl += pnl
         self.current_balance += pnl
@@ -61,9 +62,12 @@ class RiskGuard:
 
     def check_new_order(self, current_time: datetime) -> RiskCheckResult:
         current_date = current_time.date()
-        effective_daily_pnl = (
-            self.daily_pnl if self.current_day == current_date else 0.0
-        )
+        if self.current_day != current_date:
+            effective_daily_pnl = 0.0
+            effective_consecutive_losses = 0
+        else:
+            effective_daily_pnl = self.daily_pnl
+            effective_consecutive_losses = self.consecutive_losses
 
         # 1. Daily Loss Check
         if (
@@ -89,11 +93,11 @@ class RiskGuard:
         # 3. Consecutive Loss Circuit Breaker
         if (
             self.config.max_consecutive_losses is not None
-            and self.consecutive_losses >= self.config.max_consecutive_losses
+            and effective_consecutive_losses >= self.config.max_consecutive_losses
         ):
             return RiskCheckResult(
                 allowed=False,
-                reason=f"CONSECUTIVE_LOSS_LIMIT_REACHED: {self.consecutive_losses} consecutive losses",
+                reason=f"CONSECUTIVE_LOSS_LIMIT_REACHED: {effective_consecutive_losses} consecutive losses",
             )
 
         # 4. Session Hours Filter

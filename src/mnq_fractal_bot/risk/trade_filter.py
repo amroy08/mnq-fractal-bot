@@ -30,6 +30,18 @@ class TradeFilterConfig:
     # None = no target distance restriction.
     max_target_points: float | None = None
 
+    # Minimum Reward-to-Risk ratio.
+    #
+    # reward = abs(target - entry)
+    # risk   = abs(entry  - stop)
+    # ratio  = reward / risk
+    #
+    # Rejects setups where the potential
+    # reward is too small relative to risk.
+    #
+    # None = no R:R restriction.
+    min_rr_ratio: float | None = None
+
     def __post_init__(self):
         if (
             self.max_stop_points is not None
@@ -53,6 +65,14 @@ class TradeFilterConfig:
         ):
             raise ValueError(
                 "max_target_points cannot be negative."
+            )
+
+        if (
+            self.min_rr_ratio is not None
+            and self.min_rr_ratio < 0
+        ):
+            raise ValueError(
+                "min_rr_ratio cannot be negative."
             )
 
 
@@ -187,6 +207,38 @@ def evaluate_trade_plan(
             return TradeFilterDecision(
                 allowed=False,
                 reason="MAX_TARGET_EXCEEDED",
+                stop_distance_points=stop_distance,
+            )
+
+    # ==================================================
+    # MINIMUM REWARD-TO-RISK RATIO
+    #
+    # reward = distance to target
+    # risk   = distance to stop (stop_distance)
+    # ratio  = reward / risk
+    #
+    # Rejects setups where the potential
+    # payoff is too small relative to risk.
+    # ==================================================
+
+    if (
+        config.min_rr_ratio is not None
+        and plan.preferred_target is not None
+        and stop_distance > 0
+    ):
+        reward_distance = abs(
+            plan.preferred_target
+            - plan.entry_price
+        )
+
+        rr_ratio = (
+            reward_distance / stop_distance
+        )
+
+        if rr_ratio < config.min_rr_ratio:
+            return TradeFilterDecision(
+                allowed=False,
+                reason="MIN_RR_NOT_MET",
                 stop_distance_points=stop_distance,
             )
 

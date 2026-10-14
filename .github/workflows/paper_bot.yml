@@ -42,13 +42,14 @@ jobs:
 
           python -m mnq_fractal_bot.execution.paper_stream_cli data/mnq_5m_live.csv \
             --initial-balance 25000 \
-            --max-drawdown 1000 \
+            --max-drawdown 800 \
             --max-daily-loss 150 \
             --max-consecutive-losses 2 \
             --breakeven-trigger-r 1.0 \
-            --min-stop-points 20 \
-            --max-stop-points 45 \
-            --exclude-hours-utc 3 4 9 \
+            --min-stop-points 15 \
+            --max-stop-points 35 \
+            --min-rr-ratio 1.0 \
+            --exclude-hours-utc 3 4 7 23 \
             --max-hold-minutes 180 \
             --discord-webhook "${DISCORD_WEBHOOK:-https://discord.com/api/webhooks/1559122213980995637/VGqK-9RYzrw1vx1H-0pfblxzyGZKXEylBLID_rK_ZcF606gJCWAvBt4Y83ZAXWtqDQ6R}" \
             $SEND_SUMMARY_FLAG

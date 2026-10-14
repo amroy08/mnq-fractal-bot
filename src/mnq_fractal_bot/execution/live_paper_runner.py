@@ -42,23 +42,30 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--min-stop-points",
         type=float,
-        default=20.0,
-        help="Minimum required stop loss distance in points (default: 20.0)",
+        default=15.0,
+        help="Minimum required stop loss distance in points (default: 15.0)",
     )
 
     parser.add_argument(
         "--max-stop-points",
         type=float,
-        default=45.0,
-        help="Maximum allowed stop loss distance in points (default: 45.0)",
+        default=35.0,
+        help="Maximum allowed stop loss distance in points (default: 35.0)",
+    )
+
+    parser.add_argument(
+        "--min-rr-ratio",
+        type=float,
+        default=1.0,
+        help="Minimum Reward:Risk ratio to accept a trade (default: 1.0)",
     )
 
     parser.add_argument(
         "--exclude-hours-utc",
         type=int,
         nargs="*",
-        default=[3, 4, 9],
-        help="UTC hours (0-23) to exclude from trading (default: 3 4 9)",
+        default=[3, 4, 7, 23],
+        help="UTC hours (0-23) to exclude from trading (default: 3 4 7 23 - toxic chop cut)",
     )
 
     parser.add_argument(
@@ -94,6 +101,7 @@ def run_live_bot(args: argparse.Namespace) -> int:
         allow_c4=False,
         min_stop_points=args.min_stop_points,
         max_stop_points=args.max_stop_points,
+        min_rr_ratio=args.min_rr_ratio,
     )
 
     risk_guard_config = RiskGuardConfig(

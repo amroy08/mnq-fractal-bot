@@ -110,6 +110,20 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "--min-rr-ratio",
+        type=float,
+        default=None,
+        help="Minimum Reward:Risk ratio to accept a trade (e.g. 1.5 requires target >= 1.5x stop distance)",
+    )
+
+    parser.add_argument(
+        "--require-htf-bias",
+        action="store_true",
+        default=False,
+        help="Only trade when direction aligns with last completed HTF candle (bullish 1H for longs, bearish 1H for shorts)",
+    )
+
+    parser.add_argument(
         "--initial-balance",
         type=float,
         default=25000.0,
@@ -182,6 +196,7 @@ def run_paper_stream(args: argparse.Namespace) -> int:
         max_stop_points=args.max_stop_points,
         min_stop_points=args.min_stop_points,
         max_target_points=args.max_target_points,
+        min_rr_ratio=args.min_rr_ratio,
     )
 
     risk_guard_config = None
@@ -204,6 +219,7 @@ def run_paper_stream(args: argparse.Namespace) -> int:
         max_hold_minutes=args.max_hold_minutes,
         breakeven_trigger_r=args.breakeven_trigger_r,
         risk_guard_config=risk_guard_config,
+        require_htf_bias=args.require_htf_bias,
     )
 
     live_trade_count = 0

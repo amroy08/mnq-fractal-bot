@@ -75,6 +75,7 @@ class BotRunner:
             RiskGuardConfig | None
         ) = None,
         trading_enabled: bool = True,
+        require_htf_bias: bool = False,
     ):
         self.engine = FractalEngine(
             lower_timeframe=(
@@ -113,6 +114,18 @@ class BotRunner:
             RiskGuard(config=risk_guard_config)
             if risk_guard_config is not None
             else None
+        )
+
+        # HTF Trend Bias Filter:
+        #
+        # When True, the bot only takes
+        # trades aligned with the last
+        # completed HTF candle direction.
+        #
+        # LONG  → last HTF close > open
+        # SHORT → last HTF close < open
+        self.require_htf_bias = (
+            require_htf_bias
         )
 
         # Normal backtests:
@@ -369,6 +382,55 @@ class BotRunner:
                 plan,
                 None,
             )
+
+        # ==================================================
+        # HTF TREND BIAS FILTER
+        #
+        # Only trade in the direction of the
+        # last completed Higher Timeframe candle.
+        #
+        # LONG  → HTF close > HTF open (bullish)
+        # SHORT → HTF close < HTF open (bearish)
+        # ==================================================
+
+        if self.require_htf_bias:
+            htf_candles = (
+                self.engine
+                .completed_htf_candles
+            )
+
+            if htf_candles:
+                last_htf = htf_candles[-1]
+
+                htf_bullish = (
+                    last_htf.close
+                    > last_htf.open
+                )
+
+                htf_bearish = (
+                    last_htf.close
+                    < last_htf.open
+                )
+
+                if (
+                    plan.direction == "LONG"
+                    and not htf_bullish
+                ):
+                    return (
+                        setup,
+                        plan,
+                        None,
+                    )
+
+                if (
+                    plan.direction == "SHORT"
+                    and not htf_bearish
+                ):
+                    return (
+                        setup,
+                        plan,
+                        None,
+                    )
 
         signal_id = (
             self._build_signal_id(
