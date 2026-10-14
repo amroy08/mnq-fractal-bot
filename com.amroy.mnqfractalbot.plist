@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.amroy.mnqfractalbot</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/anaconda3/bin/python</string>
+        <string>-m</string>
+        <string>mnq_fractal_bot.execution.live_daemon</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/amroy/Desktop/mnq-fractal-bot</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/amroy/Desktop/mnq-fractal-bot/src</string>
+        <key>PATH</key>
+        <string>/opt/anaconda3/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+
+    <!-- Run automatically on boot/wake and keep running -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- Auto-restart if it exits or Mac wakes up -->
+    <key>KeepAlive</key>
+    <true/>
+
+    <!-- Throttle restarts to prevent spamming if network is down -->
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <!-- Standard log locations -->
+    <key>StandardOutPath</key>
+    <string>/Users/amroy/Desktop/mnq-fractal-bot/bot_live.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/amroy/Desktop/mnq-fractal-bot/bot_live.log</string>
+</dict>
+</plist>

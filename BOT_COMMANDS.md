@@ -4,25 +4,31 @@ This file contains all the commands you need to manage your 24/7 trading bot and
 
 ---
 
-## 1. Bot Controls (Start, Stop, Status)
+## 1. Bot Controls (Start, Stop, Auto-Start Service)
 
-### 🔴 Stop / Kill the Trading Bot
-Run this whenever you want to completely stop the bot:
-```bash
-pkill -f live_daemon.py
-```
+### ⚡ Auto-Start Service (LaunchAgent)
+The bot is installed as an automatic macOS system service (`com.amroy.mnqfractalbot`). It starts automatically on boot/wake and restarts if it ever stops.
 
-### 🟢 Start the Trading Bot
-Run this in your terminal to start the bot in the background:
-```bash
-cd /Users/amroy/Desktop/mnq-fractal-bot
-nohup /opt/anaconda3/bin/python -m mnq_fractal_bot.execution.live_daemon > bot_live.log 2>&1 &
-```
+- **Check Service Status:**
+  ```bash
+  launchctl list | grep mnqfractalbot
+  ```
 
-### 🔍 Check if the Bot is Running
-```bash
-ps aux | grep live_daemon | grep -v grep
-```
+- **Stop / Turn OFF Auto-Start Service:**
+  ```bash
+  launchctl unload ~/Library/LaunchAgents/com.amroy.mnqfractalbot.plist
+  ```
+
+- **Start / Turn ON Auto-Start Service:**
+  ```bash
+  launchctl load ~/Library/LaunchAgents/com.amroy.mnqfractalbot.plist
+  ```
+
+- **Emergency Kill (Stop All):**
+  ```bash
+  launchctl unload ~/Library/LaunchAgents/com.amroy.mnqfractalbot.plist
+  pkill -f live_daemon.py
+  ```
 
 ### 📜 View Live Bot Logs (Every 5m candle, setups, orders)
 Press `Ctrl + C` anytime to exit the view:
