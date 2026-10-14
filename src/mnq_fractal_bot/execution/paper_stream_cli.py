@@ -312,15 +312,23 @@ def run_paper_stream(args: argparse.Namespace) -> int:
     print("=" * 72)
 
     if notifier.is_configured and args.send_summary:
+        # Determine the latest session date from the candles
+        latest_date = candles[-1].timestamp.strftime("%Y-%m-%d")
+        daily_trades = [t for t in closed_trades if t.exit_time.strftime("%Y-%m-%d") == latest_date]
+        daily_gross = sum(t.gross_pnl for t in daily_trades)
+        daily_wins = [t for t in daily_trades if t.gross_pnl > 0]
+        daily_losses = [t for t in daily_trades if t.gross_pnl <= 0]
+        daily_wr = (len(daily_wins) / len(daily_trades) * 100) if daily_trades else 0.0
+
         notifier.notify_session_summary(
-            total_trades=len(closed_trades),
-            wins=len(wins),
-            losses=len(losses),
-            win_rate=win_rate,
-            gross_pnl=total_gross,
+            total_trades=len(daily_trades),
+            wins=len(daily_wins),
+            losses=len(daily_losses),
+            win_rate=daily_wr,
+            gross_pnl=daily_gross,
             initial_balance=args.initial_balance,
-            final_balance=args.initial_balance + total_gross,
-            period_label="Day's Session",
+            final_balance=args.initial_balance + daily_gross,
+            period_label=f"Session ({latest_date})",
         )
 
     return 0
