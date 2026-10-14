@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 def fetch_live_mnq_candles(
     interval: str = "5m",
-    range_period: str = "5d",
+    range_period: str = "60d",
     output_path: Path | str = "data/mnq_5m_live.csv",
 ) -> Path:
     """
