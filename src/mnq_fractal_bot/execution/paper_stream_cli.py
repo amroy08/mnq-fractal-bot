@@ -202,19 +202,24 @@ def run_paper_stream(args: argparse.Namespace) -> int:
     live_pnl = 0.0
 
     notifier = DiscordNotifier(webhook_url=args.discord_webhook)
-    if notifier.is_configured:
-        print(f"Discord Alert   : ENABLED ({args.discord_webhook[:35]}...)")
+    # Determine cutoff for Discord alert notification (only alert recent live events)
+    latest_candle_time = candles[-1].timestamp
+    from datetime import timedelta
+    # Only send live Discord alerts for candles that occurred within the last 2 hours of the feed
+    alert_time_cutoff = latest_candle_time - timedelta(hours=2)
 
     def on_stream_event(ev: StreamEvent) -> None:
         nonlocal live_trade_count, live_pnl
 
         # Log broker events as they happen
+        is_recent = ev.candle.timestamp >= alert_time_cutoff
+
         for broker_ev in ev.snapshot.events:
             ts = ev.candle.timestamp.strftime("%Y-%m-%d %H:%M UTC")
 
             if broker_ev.event_type == "ORDER_SUBMITTED":
                 print(f"[{ts}] 📝 ORDER SUBMITTED: {broker_ev.signal_id} @ {broker_ev.price}")
-                if notifier.is_configured and runner.broker.pending_order is not None:
+                if notifier.is_configured and is_recent and runner.broker.pending_order is not None:
                     po = runner.broker.pending_order
                     notifier.notify_order_submitted(
                         signal_id=broker_ev.signal_id or "",
@@ -227,7 +232,7 @@ def run_paper_stream(args: argparse.Namespace) -> int:
 
             elif broker_ev.event_type == "ENTRY_FILLED":
                 print(f"[{ts}] 🟢 ENTRY FILLED   : {broker_ev.signal_id} @ {broker_ev.price}")
-                if notifier.is_configured:
+                if notifier.is_configured and is_recent:
                     notifier.notify_entry_filled(
                         signal_id=broker_ev.signal_id or "",
                         fill_price=broker_ev.price or 0.0,
@@ -239,7 +244,7 @@ def run_paper_stream(args: argparse.Namespace) -> int:
                 live_pnl += pnl
                 live_trade_count += 1
                 print(f"[{ts}] 🎯 TARGET HIT     : +${pnl:.2f} | Running P&L: {format_currency(live_pnl)}")
-                if notifier.is_configured:
+                if notifier.is_configured and is_recent:
                     notifier.notify_trade_closed(
                         signal_id=broker_ev.signal_id or "",
                         exit_reason="TARGET",
@@ -253,7 +258,7 @@ def run_paper_stream(args: argparse.Namespace) -> int:
                 live_pnl += pnl
                 live_trade_count += 1
                 print(f"[{ts}] 🛑 STOP HIT       : -${abs(pnl):.2f} | Running P&L: {format_currency(live_pnl)}")
-                if notifier.is_configured:
+                if notifier.is_configured and is_recent:
                     notifier.notify_trade_closed(
                         signal_id=broker_ev.signal_id or "",
                         exit_reason="STOPPED",
@@ -268,7 +273,7 @@ def run_paper_stream(args: argparse.Namespace) -> int:
                 live_trade_count += 1
                 sign = "+" if pnl >= 0 else "-"
                 print(f"[{ts}] ⏱️ TIME-STOP EXIT : {sign}${abs(pnl):.2f} | Running P&L: {format_currency(live_pnl)}")
-                if notifier.is_configured:
+                if notifier.is_configured and is_recent:
                     notifier.notify_trade_closed(
                         signal_id=broker_ev.signal_id or "",
                         exit_reason="TIME_STOP",
