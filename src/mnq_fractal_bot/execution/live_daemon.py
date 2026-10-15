@@ -23,6 +23,11 @@ logger = logging.getLogger("LiveDaemon")
 import os
 DISCORD_WEBHOOK = os.environ.get("DISCORD_WEBHOOK_URL", "")
 
+from mnq_fractal_bot.execution.cloud_driver import TradovateCloudDriver
+import asyncio
+
+cloud_driver = TradovateCloudDriver()
+
 def run_loop():
     logger.info("=" * 60)
     logger.info("MNQ FRACTAL BOT — 24/7 LIVE AUTONOMOUS EXECUTION DAEMON")
@@ -93,13 +98,13 @@ def run_loop():
                         processed_signal_ids.add(sig_id)
                         logger.info(f"🚨 LIVE SETUP DETECTED! Direction: {order.direction} | Entry: {order.entry_price}")
 
-                        # Execute via Tradovate Auto-Clicker
-                        if order.direction == "LONG":
-                            logger.info("Executing BUY into Tradovate...")
-                            success = clicker.click_buy()
-                        else:
-                            logger.info("Executing SELL into Tradovate...")
-                            success = clicker.click_sell()
+                        # Execute via Headless Cloud Driver (runs 100% inside AWS EC2)
+                        logger.info(f"Executing {order.direction} via Headless Cloud Driver on AWS...")
+                        try:
+                            success = asyncio.run(cloud_driver.execute_trade(order.direction))
+                        except Exception as e:
+                            logger.error(f"Cloud execution failed: {e}")
+                            success = False
 
                         # Alert Discord
                         notifier.send_embed(
