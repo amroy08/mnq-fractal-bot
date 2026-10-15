@@ -34,7 +34,7 @@ class DiscordNotifier:
         description: str,
         color: int = 0x3498DB,  # Default blue
         fields: list[dict[str, Any]] | None = None,
-        footer: str = "MNQ Fractal Bot — Paper Trading",
+        footer: str = "MNQ Fractal Bot — Live Real-Money Execution",
     ) -> DiscordNotificationResult:
         if not self.is_configured:
             return DiscordNotificationResult(
