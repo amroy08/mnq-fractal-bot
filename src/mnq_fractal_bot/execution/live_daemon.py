@@ -41,16 +41,17 @@ def run_loop():
         min_rr_ratio=1.0,
     )
     # -------------------------------------------------------------
-    # INSTITUTIONAL NY KILLZONE SESSION GATE
+    # 3 INSTITUTIONAL SNIPER WINDOWS (FRANKFURT/LONDON + NY)
     # -------------------------------------------------------------
-    # Exclude all dead hours, allowing entries ONLY during peak US liquidity:
-    # 1. NY Morning Open Killzone: 13:30 - 15:30 UTC (9:30 - 11:30 AM ET)
-    # 2. NY Afternoon Trend Run:   17:30 - 19:30 UTC (1:30 - 3:30 PM ET)
-    # All other 18 hours of low-volume / lunch chop are strictly blocked.
+    # We strictly block dead chop periods and trade only high-volume bursts:
+    # 1. Frankfurt & London Open: 06:00 - 08:30 UTC (02:00 - 04:30 AM ET / 11:30 AM - 2:00 PM IST)
+    # 2. NY Morning Open:         13:30 - 15:30 UTC (09:30 - 11:30 AM ET / 07:00 PM - 9:00 PM IST)
+    # 3. NY Afternoon Run:        17:30 - 19:30 UTC (01:30 - 03:30 PM ET / 11:00 PM - 1:00 AM IST)
+    # All dead European lulls, Wall Street lunch, and Asian low-volume drift are BLOCKED.
     # -------------------------------------------------------------
-    allowed_killzone_hours_utc = {13, 14, 15, 17, 18, 19}
+    allowed_sniper_hours_utc = {6, 7, 8, 13, 14, 15, 17, 18, 19}
     all_hours = set(range(24))
-    excluded_hours = tuple(sorted(all_hours - allowed_killzone_hours_utc))
+    excluded_hours = tuple(sorted(all_hours - allowed_sniper_hours_utc))
 
     risk_guard = RiskGuardConfig(
         max_daily_loss=150.0,
