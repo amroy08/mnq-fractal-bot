@@ -20,7 +20,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger("LiveDaemon")
 
-DISCORD_WEBHOOK = "https://discord.com/api/webhooks/1559122213980995637/VGqK-9RYzrw1vx1H-0pfblxzyGZKXEylBLID_rK_ZcF606gJCWAvBt4Y83ZAXWtqDQ6R"
+import os
+DISCORD_WEBHOOK = os.environ.get("DISCORD_WEBHOOK_URL", "")
 
 def run_loop():
     logger.info("=" * 60)
