@@ -42,8 +42,8 @@ def run_loop():
     trade_filter = TradeFilterConfig(
         allow_c3=True,
         allow_c4=False,
-        min_stop_points=20.0,
-        max_stop_points=30.0,
+        min_stop_points=15.0,
+        max_stop_points=35.0,
         min_rr_ratio=1.0,
     )
     # -------------------------------------------------------------
