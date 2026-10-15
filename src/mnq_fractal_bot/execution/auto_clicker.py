@@ -13,12 +13,13 @@ class TradovateAutoClicker:
 
     def __init__(self):
         # Target coordinate offsets based on standard 1470x956 fullscreen Tradovate layout
-        # Buy Bid: x=620, y=268
-        # Sell Ask: x=695, y=268
-        # Exit at Mkt & Cxl: x=985, y=232
-        self.buy_bid_pos = (620, 268)
-        self.sell_ask_pos = (695, 268)
-        self.exit_pos = (985, 232)
+        # Chart order bar buttons:
+        # Buy Bid: x=420, y=268
+        # Sell Ask: x=475, y=268
+        # Exit at Mkt & Cxl: x=675, y=232
+        self.buy_bid_pos = (420, 268)
+        self.sell_ask_pos = (475, 268)
+        self.exit_pos = (675, 232)
 
     def activate_tradovate(self) -> bool:
         """Brings Tradovate window to front if on macOS, or bypasses on Linux/Xvfb."""
