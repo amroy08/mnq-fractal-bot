@@ -21,7 +21,12 @@ class TradovateAutoClicker:
         self.exit_pos = (985, 232)
 
     def activate_tradovate(self) -> bool:
-        """Brings Google Chrome and Tradovate tab to front."""
+        """Brings Tradovate window to front if on macOS, or bypasses on Linux/Xvfb."""
+        import sys
+        if sys.platform != "darwin":
+            # On Linux (AWS EC2 Xvfb), the virtual display is always dedicated to Chrome
+            return True
+
         script = '''
         tell application "Google Chrome" to activate
         tell application "System Events"
