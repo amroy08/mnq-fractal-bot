@@ -111,8 +111,9 @@ def run():
 
                             # Check available balance
                             bal = float(client.futures_account()['availableBalance'])
-                            # Position size: ~$20 to $40 notional with 5x leverage (~0.25 to 0.35 SOL)
-                            qty = round((bal * LEVERAGE * 0.70) / entry, 2)
+                            # Conservative sizing: Use only ~$2.00 margin (0.10 SOL contract size)
+                            # This leaves $8.00 (80%) of your balance free as cushion!
+                            qty = 0.10 if bal < 25.0 else round((bal * LEVERAGE * 0.20) / entry, 2)
                             if qty < 0.1:
                                 qty = 0.1
 
