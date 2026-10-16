@@ -139,22 +139,39 @@ def run():
                             )
                             logger.info(f"Market order filled! OrderId: {order.get('orderId')}")
 
-                            # Submit Stop Loss
-                            client.futures_create_order(
-                                symbol=SYMBOL,
-                                side=opp_side,
-                                type="STOP_MARKET",
-                                stopPrice=round(stop, 2),
-                                closePosition=True
-                            )
-                            # Submit Take Profit
-                            client.futures_create_order(
-                                symbol=SYMBOL,
-                                side=opp_side,
-                                type="TAKE_PROFIT_MARKET",
-                                stopPrice=round(runner_target, 2),
-                                closePosition=True
-                            )
+                            # 1. Submit Stop Loss with retry
+                            try:
+                                client.futures_create_order(
+                                    symbol=SYMBOL,
+                                    side=opp_side,
+                                    type="STOP_MARKET",
+                                    stopPrice=round(stop, 2),
+                                    closePosition=True
+                                )
+                                logger.info(f"Stop Loss attached at {round(stop, 2)}")
+                            except Exception as e:
+                                logger.error(f"Failed to submit SL: {e}")
+
+                            # 2. Submit Take Profit with live price check to prevent (-2021 Order would immediately trigger)
+                            try:
+                                curr_price = float(client.futures_symbol_ticker(symbol=SYMBOL)['price'])
+                                final_tp = runner_target
+                                # Ensure TP is safely ahead of current price
+                                if plan.direction == "LONG" and final_tp <= curr_price:
+                                    final_tp = curr_price + max(risk_pts * 1.8, 1.20)
+                                elif plan.direction == "SHORT" and final_tp >= curr_price:
+                                    final_tp = curr_price - max(risk_pts * 1.8, 1.20)
+
+                                client.futures_create_order(
+                                    symbol=SYMBOL,
+                                    side=opp_side,
+                                    type="TAKE_PROFIT_MARKET",
+                                    stopPrice=round(final_tp, 2),
+                                    closePosition=True
+                                )
+                                logger.info(f"Take Profit attached at {round(final_tp, 2)}")
+                            except Exception as e:
+                                logger.error(f"Failed to submit TP: {e}")
 
                             logger.info("Stop Loss & Take Profit Brackets Submitted!")
 
