@@ -95,8 +95,20 @@ def run():
                         
                         # Only trade if risk is between 0.30 and 1.50 SOL points
                         if 0.30 <= risk_pts <= 1.50:
+                            # 1. Check if we already have an open position
+                            positions = [p for p in client.futures_position_information(symbol=SYMBOL) if float(p['positionAmt']) != 0]
+                            if positions:
+                                logger.info("Position already active on SOLUSDT. Skipping new entry.")
+                                continue
+
                             logger.info(f"🚨 BINANCE SIGNAL DETECTED: {plan.direction} | Entry: {entry} | Stop: {stop} | TP: {target}")
                             
+                            # Cancel any lingering open conditional orders before entering new
+                            try:
+                                client.futures_cancel_all_open_orders(symbol=SYMBOL)
+                            except Exception:
+                                pass
+
                             # Check available balance
                             bal = float(client.futures_account()['availableBalance'])
                             # Position size: ~$20 to $40 notional with 5x leverage (~0.25 to 0.35 SOL)
