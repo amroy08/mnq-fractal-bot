@@ -102,7 +102,16 @@ def run():
                                 logger.info("Position already active on SOLUSDT. Skipping new entry.")
                                 continue
 
-                            logger.info(f"🚨 BINANCE SIGNAL DETECTED: {plan.direction} | Entry: {entry} | Stop: {stop} | TP: {target}")
+                            # ASYMMETRIC RUNNER UPGRADE:
+                            # Ensure Target is at least 1.8x the Stop Distance (Min 1.20 SOL points).
+                            # This lets the big trend expansions run, turning 5-cent scalps into +$0.50 to +$0.80 wins!
+                            min_tp_dist = max(risk_pts * 1.8, 1.20)
+                            if plan.direction == "LONG":
+                                runner_target = max(target, entry + min_tp_dist)
+                            else:
+                                runner_target = min(target, entry - min_tp_dist)
+
+                            logger.info(f"🚨 BINANCE SIGNAL DETECTED: {plan.direction} | Entry: {entry} | Stop: {stop} | TP: {runner_target:.2f} (Target Dist: {abs(runner_target - entry):.2f} pts)")
                             
                             # Cancel any lingering open conditional orders before entering new
                             try:
@@ -143,7 +152,7 @@ def run():
                                 symbol=SYMBOL,
                                 side=opp_side,
                                 type="TAKE_PROFIT_MARKET",
-                                stopPrice=round(target, 2),
+                                stopPrice=round(runner_target, 2),
                                 closePosition=True
                             )
 
@@ -158,7 +167,7 @@ def run():
                                     {"name": "Pair", "value": "SOLUSDT", "inline": True},
                                     {"name": "Entry", "value": f"${entry:.2f}", "inline": True},
                                     {"name": "Stop Loss", "value": f"${stop:.2f} ({risk_pts:.2f} pts)", "inline": True},
-                                    {"name": "Take Profit", "value": f"${target:.2f}", "inline": True},
+                                    {"name": "Take Profit", "value": f"${runner_target:.2f} (+{abs(runner_target - entry):.2f} pts)", "inline": True},
                                     {"name": "Size", "value": f"{qty} SOL (~${qty * entry:.2f})", "inline": True},
                                     {"name": "Status", "value": "FILLED & PROTECTED", "inline": True},
                                 ]
