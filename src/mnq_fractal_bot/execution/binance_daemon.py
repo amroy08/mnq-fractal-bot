@@ -167,12 +167,15 @@ def run():
             # ---------------------------------------------------------
             # 2. CHECK IF ANY OPEN TRADE CLOSED VIA SL OR TP
             # ---------------------------------------------------------
-            recent_trades = client.futures_account_trades(symbol=SYMBOL, limit=3)
+            recent_trades = client.futures_account_trades(symbol=SYMBOL, limit=10)
             for t in recent_trades:
                 tid = t['id']
                 if tid not in known_trade_ids:
                     known_trade_ids.add(tid)
-                    pnl = float(t.get('realizedPnl', 0))
+                    try:
+                        pnl = float(t.get('realizedPnl', 0))
+                    except (ValueError, TypeError):
+                        pnl = 0.0
                     # Only alert on exit trades (where realized PnL is non-zero)
                     if pnl != 0:
                         is_win = pnl > 0
