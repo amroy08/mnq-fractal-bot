@@ -111,9 +111,9 @@ def run():
 
                             # Check available balance
                             bal = float(client.futures_account()['availableBalance'])
-                            # Conservative sizing: Use only ~$2.00 margin (0.10 SOL contract size)
-                            # This leaves $8.00 (80%) of your balance free as cushion!
-                            qty = 0.10 if bal < 25.0 else round((bal * LEVERAGE * 0.20) / entry, 2)
+                            # Optimal Compounding Allocation: 70% of available margin (~0.30 - 0.35 SOL)
+                            # Risk per trade is clamped to ~16-25 cents, giving you 50+ lives!
+                            qty = round((bal * LEVERAGE * 0.70) / entry, 2)
                             if qty < 0.1:
                                 qty = 0.1
 
