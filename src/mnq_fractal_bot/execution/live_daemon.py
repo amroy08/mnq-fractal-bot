@@ -62,6 +62,7 @@ def run_loop():
 
     last_processed_ts = None
     processed_signal_ids = set()
+    processed_exit_ids = set()
 
     while True:
         try:
@@ -106,7 +107,7 @@ def run_loop():
                             logger.error(f"Cloud execution failed: {e}")
                             success = False
 
-                        # Alert Discord
+                        # Alert Discord Entry
                         notifier.send_embed(
                             title=f"🚨 TRADOVATE ORDER FIRED: {order.direction}",
                             description=f"Auto-clicker triggered **{order.direction}** order into Tradovate.",
@@ -118,7 +119,38 @@ def run_loop():
                                 {"name": "Account", "value": "LFE02592063680001", "inline": True},
                                 {"name": "Execution Status", "value": "SUCCESS" if success else "FAILED", "inline": True},
                             ],
-                            footer="MNQ Fractal Bot — Live Autonomous Execution",
+                            footer="MNQ Fractal Bot — Live Real-Money Execution",
+                        )
+
+                # Check if any trade closed on the latest candle (TP or SL)
+                if runner.broker.closed_trades:
+                    last_trade = runner.broker.closed_trades[-1]
+                    if last_trade.signal_id not in processed_exit_ids:
+                        processed_exit_ids.add(last_trade.signal_id)
+                        is_tp = "TARGET" in last_trade.exit_reason.upper()
+                        title = f"🎯 MNQ TAKE PROFIT HIT: +${last_trade.gross_pnl:.2f}" if is_tp else f"🛑 MNQ STOP LOSS HIT: -${abs(last_trade.gross_pnl):.2f}"
+                        desc = (
+                            f"Take Profit target achieved on MNQ! Locked in **+${last_trade.gross_pnl:.2f}** profit."
+                            if is_tp
+                            else f"Protective Stop Loss triggered on MNQ. Capital preserved."
+                        )
+                        color = 0x2ECC71 if is_tp else 0xE74C3C
+
+                        logger.info(f"Discord Alert: {title} | Exit: {last_trade.exit_price}")
+                        notifier.send_embed(
+                            title=title,
+                            description=desc,
+                            color=color,
+                            fields=[
+                                {"name": "Instrument", "value": "MNQ (Micro Nasdaq)", "inline": True},
+                                {"name": "Direction", "value": last_trade.direction, "inline": True},
+                                {"name": "Exit Price", "value": f"{last_trade.exit_price:.2f}", "inline": True},
+                                {"name": "Points P&L", "value": f"{last_trade.points:+.2f} pts", "inline": True},
+                                {"name": "Gross P&L", "value": f"{last_trade.gross_pnl:+.2f} USD", "inline": True},
+                                {"name": "Exit Reason", "value": last_trade.exit_reason, "inline": True},
+                                {"name": "Account", "value": "LFE02592063680001", "inline": True},
+                            ],
+                            footer="MNQ Fractal Bot — Live Real-Money Execution",
                         )
 
         except Exception as e:
