@@ -68,6 +68,7 @@ def run():
 
     last_candle_time = ohlcv[-2][0]
     processed_signal_entries = set()
+    known_trade_ids = {t['id'] for t in client.futures_account_trades(symbol=SYMBOL, limit=20)}
 
     while True:
         try:
@@ -148,7 +149,7 @@ def run():
 
                             logger.info("Stop Loss & Take Profit Brackets Submitted!")
 
-                            # Alert Discord
+                            # Alert Discord Entry
                             notifier.send_embed(
                                 title=f"🚨 BINANCE ORDER FIRED: {plan.direction} SOL",
                                 description=f"Autonomous bot executed **{plan.direction}** on Binance Futures.",
@@ -162,6 +163,41 @@ def run():
                                     {"name": "Status", "value": "FILLED & PROTECTED", "inline": True},
                                 ]
                             )
+
+            # ---------------------------------------------------------
+            # 2. CHECK IF ANY OPEN TRADE CLOSED VIA SL OR TP
+            # ---------------------------------------------------------
+            recent_trades = client.futures_account_trades(symbol=SYMBOL, limit=3)
+            for t in recent_trades:
+                tid = t['id']
+                if tid not in known_trade_ids:
+                    known_trade_ids.add(tid)
+                    pnl = float(t.get('realizedPnl', 0))
+                    # Only alert on exit trades (where realized PnL is non-zero)
+                    if pnl != 0:
+                        is_win = pnl > 0
+                        title = f"🎯 TAKE PROFIT HIT: +${pnl:.2f} USDT" if is_win else f"🛑 STOP LOSS HIT: -${abs(pnl):.2f} USDT"
+                        desc = (
+                            f"Winning trade locked in! Your Take Profit was reached."
+                            if is_win
+                            else f"Protective Stop Loss triggered. Capital preserved."
+                        )
+                        color = 0x2ECC71 if is_win else 0xE74C3C
+                        bal = float(client.futures_account()['availableBalance'])
+
+                        logger.info(f"Discord Alert: {title} | Exit Price: {t['price']}")
+                        notifier.send_embed(
+                            title=title,
+                            description=desc,
+                            color=color,
+                            fields=[
+                                {"name": "Pair", "value": "SOLUSDT", "inline": True},
+                                {"name": "Exit Price", "value": f"${float(t['price']):.2f}", "inline": True},
+                                {"name": "Realized P&L", "value": f"{pnl:+.4f} USDT", "inline": True},
+                                {"name": "Wallet Balance", "value": f"${bal:.2f} USDT", "inline": True},
+                                {"name": "Status", "value": "POSITION CLOSED", "inline": True},
+                            ]
+                        )
 
         except Exception as e:
             logger.error(f"Error in Binance loop: {e}")
