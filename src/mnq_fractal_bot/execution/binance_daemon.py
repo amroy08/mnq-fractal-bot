@@ -20,7 +20,7 @@ logger = logging.getLogger("BinanceDaemon")
 
 API_KEY = os.environ.get("BINANCE_API_KEY", "vjTyiyaBiXbfODyOVsUAqtd0ZhW7MEfbnnItYcD3ISn3UzT92Y32GusIwnAKTtR6")
 API_SECRET = os.environ.get("BINANCE_API_SECRET", "qn57eCxlgA5EL25KJDLjNYS55lyjsoPoC1ONHmbcaU5aROJl9eLbHHkvGTojlf5F")
-DISCORD_URL = os.environ.get("DISCORD_WEBHOOK_URL", "https://discord.com/api/webhooks/1560225230918520902/NmoBpPyCL9zibICLBezFVp1r1yV5ftNY6n_FVWf5OJW6j1IL1e6IKH8RY5pqC7QPJZep")
+DISCORD_URL = os.environ.get("DISCORD_WEBHOOK_URL", "https://discord.com/api/webhooks/1560897680371351583/d06UiB9C79jlNs9G5lf9EyEc9Y-e_p7tsssxmV8t9ydI8sLBb_aByckvEgy4DBdcB8FA")
 
 SYMBOL = "SOLUSDT"
 LEVERAGE = 5
@@ -187,7 +187,8 @@ def run():
                                     {"name": "Take Profit", "value": f"${runner_target:.2f} (+{abs(runner_target - entry):.2f} pts)", "inline": True},
                                     {"name": "Size", "value": f"{qty} SOL (~${qty * entry:.2f})", "inline": True},
                                     {"name": "Status", "value": "FILLED & PROTECTED", "inline": True},
-                                ]
+                                ],
+                                footer="Solana Fractal Bot — Live Real-Money Execution",
                             )
 
             # ---------------------------------------------------------
@@ -225,7 +226,8 @@ def run():
                                 {"name": "Realized P&L", "value": f"{pnl:+.4f} USDT", "inline": True},
                                 {"name": "Wallet Balance", "value": f"${bal:.2f} USDT", "inline": True},
                                 {"name": "Status", "value": "POSITION CLOSED", "inline": True},
-                            ]
+                            ],
+                            footer="Solana Fractal Bot — Live Real-Money Execution",
                         )
 
         except Exception as e:
