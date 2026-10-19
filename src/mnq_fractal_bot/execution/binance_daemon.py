@@ -94,24 +94,30 @@ def run():
                         processed_signal_entries.add(entry)
                         risk_pts = abs(entry - stop)
                         
-                        # Only trade if risk is between 0.30 and 1.50 SOL points
-                        if 0.30 <= risk_pts <= 1.50:
-                            # 1. Check if we already have an open position
+                        # Only trade if risk is between 0.25 and 1.20 SOL points
+                        if 0.25 <= risk_pts <= 1.20:
+                            # 1. 1-Hour Trend Bias Alignment Guard
+                            # Longs require bullish 1H candle; Shorts require bearish 1H candle
+                            htf_candles = engine.htf_candles
+                            if htf_candles:
+                                last_htf = htf_candles[-1]
+                                is_htf_bullish = last_htf.close >= last_htf.open
+                                if plan.direction == "LONG" and not is_htf_bullish:
+                                    logger.info(f"Skipping LONG on SOL: 1H HTF trend is bearish ({last_htf.open} -> {last_htf.close}). Trend alignment enforced.")
+                                    continue
+                                elif plan.direction == "SHORT" and is_htf_bullish:
+                                    logger.info(f"Skipping SHORT on SOL: 1H HTF trend is bullish ({last_htf.open} -> {last_htf.close}). Trend alignment enforced.")
+                                    continue
+
+                            # 2. Check if we already have an open position
                             positions = [p for p in client.futures_position_information(symbol=SYMBOL) if float(p['positionAmt']) != 0]
                             if positions:
                                 logger.info("Position already active on SOLUSDT. Skipping new entry.")
                                 continue
 
-                            # ASYMMETRIC RUNNER UPGRADE:
-                            # Ensure Target is at least 1.8x the Stop Distance (Min 1.20 SOL points).
-                            # This lets the big trend expansions run, turning 5-cent scalps into +$0.50 to +$0.80 wins!
-                            min_tp_dist = max(risk_pts * 1.8, 1.20)
-                            if plan.direction == "LONG":
-                                runner_target = max(target, entry + min_tp_dist)
-                            else:
-                                runner_target = min(target, entry - min_tp_dist)
-
-                            logger.info(f"🚨 BINANCE SIGNAL DETECTED: {plan.direction} | Entry: {entry} | Stop: {stop} | TP: {runner_target:.2f} (Target Dist: {abs(runner_target - entry):.2f} pts)")
+                            # High-Probability Institutional C1 Target (Fast Scalp & Bank Profit)
+                            fast_tp = target
+                            logger.info(f"🚨 BINANCE SIGNAL DETECTED (HTF ALIGNED): {plan.direction} | Entry: {entry} | Stop: {stop} | TP: {fast_tp:.2f} (Dist: {abs(fast_tp - entry):.2f} pts)")
                             
                             # Cancel any lingering open conditional orders before entering new
                             try:
@@ -155,12 +161,12 @@ def run():
                             # 2. Submit Take Profit with live price check to prevent (-2021 Order would immediately trigger)
                             try:
                                 curr_price = float(client.futures_symbol_ticker(symbol=SYMBOL)['price'])
-                                final_tp = runner_target
+                                final_tp = fast_tp
                                 # Ensure TP is safely ahead of current price
                                 if plan.direction == "LONG" and final_tp <= curr_price:
-                                    final_tp = curr_price + max(risk_pts * 1.8, 1.20)
+                                    final_tp = curr_price + max(risk_pts * 1.2, 0.40)
                                 elif plan.direction == "SHORT" and final_tp >= curr_price:
-                                    final_tp = curr_price - max(risk_pts * 1.8, 1.20)
+                                    final_tp = curr_price - max(risk_pts * 1.2, 0.40)
 
                                 client.futures_create_order(
                                     symbol=SYMBOL,
@@ -178,13 +184,13 @@ def run():
                             # Alert Discord Entry
                             notifier.send_embed(
                                 title=f"🚨 BINANCE ORDER FIRED: {plan.direction} SOL",
-                                description=f"Autonomous bot executed **{plan.direction}** on Binance Futures.",
+                                description=f"Autonomous bot executed **{plan.direction}** on Binance Futures (1H Trend Aligned).",
                                 color=0x2ECC71 if plan.direction == "LONG" else 0xE74C3C,
                                 fields=[
                                     {"name": "Pair", "value": "SOLUSDT", "inline": True},
                                     {"name": "Entry", "value": f"${entry:.2f}", "inline": True},
                                     {"name": "Stop Loss", "value": f"${stop:.2f} ({risk_pts:.2f} pts)", "inline": True},
-                                    {"name": "Take Profit", "value": f"${runner_target:.2f} (+{abs(runner_target - entry):.2f} pts)", "inline": True},
+                                    {"name": "Take Profit", "value": f"${fast_tp:.2f} (+{abs(fast_tp - entry):.2f} pts)", "inline": True},
                                     {"name": "Size", "value": f"{qty} SOL (~${qty * entry:.2f})", "inline": True},
                                     {"name": "Status", "value": "FILLED & PROTECTED", "inline": True},
                                 ],
