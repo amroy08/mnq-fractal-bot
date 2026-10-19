@@ -125,7 +125,11 @@ def run_loop():
                 # Check if any trade closed on the latest candle (TP or SL)
                 if runner.broker.closed_trades:
                     last_trade = runner.broker.closed_trades[-1]
-                    if last_trade.signal_id not in processed_exit_ids:
+                    # ONLY alert if this trade closed ON THE LIVE LATEST CANDLE (not historical past data)
+                    if (
+                        last_trade.exit_time == latest_candle.timestamp
+                        and last_trade.signal_id not in processed_exit_ids
+                    ):
                         processed_exit_ids.add(last_trade.signal_id)
                         is_tp = "TARGET" in last_trade.exit_reason.upper()
                         title = f"🎯 MNQ TAKE PROFIT HIT: +${last_trade.gross_pnl:.2f}" if is_tp else f"🛑 MNQ STOP LOSS HIT: -${abs(last_trade.gross_pnl):.2f}"
