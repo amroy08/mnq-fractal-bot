@@ -14,6 +14,7 @@ import ccxt
 from mnq_fractal_bot.models.candle import Candle
 from mnq_fractal_bot.strategy.fractal_engine import FractalEngine
 from mnq_fractal_bot.notifications.discord_notifier import DiscordNotifier
+from mnq_fractal_bot.risk.crypto_risk_manager import CryptoRiskManager, CryptoRiskConfig
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("BinanceDaemon")
@@ -29,12 +30,13 @@ def run():
     logger.info("=" * 60)
     logger.info("🪙 BINANCE SOL/USDT FRACTAL BOT — 24/7 AUTONOMOUS CLOUD DAEMON")
     logger.info(f"Target Symbol: {SYMBOL} | Leverage: {LEVERAGE}x Isolated")
-    logger.info("Strategy: 5m -> 1H Institutional C3 Fractal Model (80.8% Win Rate)")
+    logger.info("Strategy: 5m -> 1H Institutional C3 Fractal Model + Trader-Skill Risk Engine")
     logger.info("=" * 60)
 
     client = Client(api_key=API_KEY, api_secret=API_SECRET)
     exchange = ccxt.binance({'apiKey': API_KEY, 'secret': API_SECRET, 'enableRateLimit': True, 'options': {'defaultType': 'future'}})
     notifier = DiscordNotifier(webhook_url=DISCORD_URL)
+    risk_manager = CryptoRiskManager()
 
     # Set leverage to 5x
     try:
@@ -92,110 +94,117 @@ def run():
 
                     if entry and stop and target and entry not in processed_signal_entries:
                         processed_signal_entries.add(entry)
-                        risk_pts = abs(entry - stop)
                         
-                        # Only trade if risk is between 0.25 and 1.20 SOL points
-                        if 0.25 <= risk_pts <= 1.20:
-                            # 1. 1-Hour Trend Bias Alignment Guard
-                            # Longs require bullish 1H candle; Shorts require bearish 1H candle
-                            htf_candles = engine.htf_candles
-                            if htf_candles:
-                                last_htf = htf_candles[-1]
-                                is_htf_bullish = last_htf.close >= last_htf.open
-                                if plan.direction == "LONG" and not is_htf_bullish:
-                                    logger.info(f"Skipping LONG on SOL: 1H HTF trend is bearish ({last_htf.open} -> {last_htf.close}). Trend alignment enforced.")
-                                    continue
-                                elif plan.direction == "SHORT" and is_htf_bullish:
-                                    logger.info(f"Skipping SHORT on SOL: 1H HTF trend is bullish ({last_htf.open} -> {last_htf.close}). Trend alignment enforced.")
-                                    continue
+                        # Check available balance
+                        bal = float(client.futures_account()['availableBalance'])
 
-                            # 2. Check if we already have an open position
-                            positions = [p for p in client.futures_position_information(symbol=SYMBOL) if float(p['positionAmt']) != 0]
-                            if positions:
-                                logger.info("Position already active on SOLUSDT. Skipping new entry.")
+                        # TRADER-SKILL RISK GATE EVALUATION:
+                        # Checks daily loss limit, 2-loss circuit breaker, stop limits, and R:R ratio
+                        passes, reason, qty = risk_manager.evaluate_order(
+                            direction=plan.direction,
+                            entry=entry,
+                            stop=stop,
+                            target=target,
+                            balance=bal
+                        )
+
+                        if not passes:
+                            logger.info(f"🚫 TRADER-SKILL RISK BLOCKED {plan.direction} on SOL: {reason}")
+                            continue
+
+                        # 1. 1-Hour Trend Bias Alignment Guard
+                        # Longs require bullish 1H candle; Shorts require bearish 1H candle
+                        htf_candles = engine.htf_candles
+                        if htf_candles:
+                            last_htf = htf_candles[-1]
+                            is_htf_bullish = last_htf.close >= last_htf.open
+                            if plan.direction == "LONG" and not is_htf_bullish:
+                                logger.info(f"Skipping LONG on SOL: 1H HTF trend is bearish ({last_htf.open} -> {last_htf.close}). Trend alignment enforced.")
+                                continue
+                            elif plan.direction == "SHORT" and is_htf_bullish:
+                                logger.info(f"Skipping SHORT on SOL: 1H HTF trend is bullish ({last_htf.open} -> {last_htf.close}). Trend alignment enforced.")
                                 continue
 
-                            # High-Probability Institutional C1 Target (Fast Scalp & Bank Profit)
-                            fast_tp = target
-                            logger.info(f"🚨 BINANCE SIGNAL DETECTED (HTF ALIGNED): {plan.direction} | Entry: {entry} | Stop: {stop} | TP: {fast_tp:.2f} (Dist: {abs(fast_tp - entry):.2f} pts)")
-                            
-                            # Cancel any lingering open conditional orders before entering new
-                            try:
-                                client.futures_cancel_all_open_orders(symbol=SYMBOL)
-                            except Exception:
-                                pass
+                        # 2. Check if we already have an open position
+                        positions = [p for p in client.futures_position_information(symbol=SYMBOL) if float(p['positionAmt']) != 0]
+                        if positions:
+                            logger.info("Position already active on SOLUSDT. Skipping new entry.")
+                            continue
 
-                            # Check available balance
-                            bal = float(client.futures_account()['availableBalance'])
-                            # Optimal Compounding Allocation: 70% of available margin (~0.30 - 0.35 SOL)
-                            # Risk per trade is clamped to ~16-25 cents, giving you 50+ lives!
-                            qty = round((bal * LEVERAGE * 0.70) / entry, 2)
-                            if qty < 0.1:
-                                qty = 0.1
+                        # High-Probability Institutional C1 Target (Fast Scalp & Bank Profit)
+                        fast_tp = target
+                        risk_pts = abs(entry - stop)
+                        logger.info(f"🚨 BINANCE ORDER APPROVED BY TRADER-SKILL: {plan.direction} | Entry: {entry} | Stop: {stop} | TP: {fast_tp:.2f} | Size: {qty} SOL ({reason})")
+                        
+                        # Cancel any lingering open conditional orders before entering new
+                        try:
+                            client.futures_cancel_all_open_orders(symbol=SYMBOL)
+                        except Exception:
+                            pass
 
-                            side = "BUY" if plan.direction == "LONG" else "SELL"
-                            opp_side = "SELL" if plan.direction == "LONG" else "BUY"
+                        side = "BUY" if plan.direction == "LONG" else "SELL"
+                        opp_side = "SELL" if plan.direction == "LONG" else "BUY"
 
-                            logger.info(f"Submitting {side} Market Order for {qty} SOL...")
-                            order = client.futures_create_order(
+                        logger.info(f"Submitting {side} Market Order for {qty} SOL...")
+                        order = client.futures_create_order(
+                            symbol=SYMBOL,
+                            side=side,
+                            type="MARKET",
+                            quantity=qty
+                        )
+                        logger.info(f"Market order filled! OrderId: {order.get('orderId')}")
+
+                        # 1. Submit Stop Loss with retry
+                        try:
+                            client.futures_create_order(
                                 symbol=SYMBOL,
-                                side=side,
-                                type="MARKET",
-                                quantity=qty
+                                side=opp_side,
+                                type="STOP_MARKET",
+                                stopPrice=round(stop, 2),
+                                closePosition=True
                             )
-                            logger.info(f"Market order filled! OrderId: {order.get('orderId')}")
+                            logger.info(f"Stop Loss attached at {round(stop, 2)}")
+                        except Exception as e:
+                            logger.error(f"Failed to submit SL: {e}")
 
-                            # 1. Submit Stop Loss with retry
-                            try:
-                                client.futures_create_order(
-                                    symbol=SYMBOL,
-                                    side=opp_side,
-                                    type="STOP_MARKET",
-                                    stopPrice=round(stop, 2),
-                                    closePosition=True
-                                )
-                                logger.info(f"Stop Loss attached at {round(stop, 2)}")
-                            except Exception as e:
-                                logger.error(f"Failed to submit SL: {e}")
+                        # 2. Submit Take Profit with live price check to prevent (-2021 Order would immediately trigger)
+                        try:
+                            curr_price = float(client.futures_symbol_ticker(symbol=SYMBOL)['price'])
+                            final_tp = fast_tp
+                            # Ensure TP is safely ahead of current price
+                            if plan.direction == "LONG" and final_tp <= curr_price:
+                                final_tp = curr_price + max(risk_pts * 1.2, 0.40)
+                            elif plan.direction == "SHORT" and final_tp >= curr_price:
+                                final_tp = curr_price - max(risk_pts * 1.2, 0.40)
 
-                            # 2. Submit Take Profit with live price check to prevent (-2021 Order would immediately trigger)
-                            try:
-                                curr_price = float(client.futures_symbol_ticker(symbol=SYMBOL)['price'])
-                                final_tp = fast_tp
-                                # Ensure TP is safely ahead of current price
-                                if plan.direction == "LONG" and final_tp <= curr_price:
-                                    final_tp = curr_price + max(risk_pts * 1.2, 0.40)
-                                elif plan.direction == "SHORT" and final_tp >= curr_price:
-                                    final_tp = curr_price - max(risk_pts * 1.2, 0.40)
-
-                                client.futures_create_order(
-                                    symbol=SYMBOL,
-                                    side=opp_side,
-                                    type="TAKE_PROFIT_MARKET",
-                                    stopPrice=round(final_tp, 2),
-                                    closePosition=True
-                                )
-                                logger.info(f"Take Profit attached at {round(final_tp, 2)}")
-                            except Exception as e:
-                                logger.error(f"Failed to submit TP: {e}")
-
-                            logger.info("Stop Loss & Take Profit Brackets Submitted!")
-
-                            # Alert Discord Entry
-                            notifier.send_embed(
-                                title=f"🚨 BINANCE ORDER FIRED: {plan.direction} SOL",
-                                description=f"Autonomous bot executed **{plan.direction}** on Binance Futures (1H Trend Aligned).",
-                                color=0x2ECC71 if plan.direction == "LONG" else 0xE74C3C,
-                                fields=[
-                                    {"name": "Pair", "value": "SOLUSDT", "inline": True},
-                                    {"name": "Entry", "value": f"${entry:.2f}", "inline": True},
-                                    {"name": "Stop Loss", "value": f"${stop:.2f} ({risk_pts:.2f} pts)", "inline": True},
-                                    {"name": "Take Profit", "value": f"${fast_tp:.2f} (+{abs(fast_tp - entry):.2f} pts)", "inline": True},
-                                    {"name": "Size", "value": f"{qty} SOL (~${qty * entry:.2f})", "inline": True},
-                                    {"name": "Status", "value": "FILLED & PROTECTED", "inline": True},
-                                ],
-                                footer="Solana Fractal Bot — Live Real-Money Execution",
+                            client.futures_create_order(
+                                symbol=SYMBOL,
+                                side=opp_side,
+                                type="TAKE_PROFIT_MARKET",
+                                stopPrice=round(final_tp, 2),
+                                closePosition=True
                             )
+                            logger.info(f"Take Profit attached at {round(final_tp, 2)}")
+                        except Exception as e:
+                            logger.error(f"Failed to submit TP: {e}")
+
+                        logger.info("Stop Loss & Take Profit Brackets Submitted!")
+
+                        # Alert Discord Entry
+                        notifier.send_embed(
+                            title=f"🚨 BINANCE ORDER FIRED: {plan.direction} SOL",
+                            description=f"Autonomous bot executed **{plan.direction}** on Binance Futures (Trader-Skill Risk Verified).",
+                            color=0x2ECC71 if plan.direction == "LONG" else 0xE74C3C,
+                            fields=[
+                                {"name": "Pair", "value": "SOLUSDT", "inline": True},
+                                {"name": "Entry", "value": f"${entry:.2f}", "inline": True},
+                                {"name": "Stop Loss", "value": f"${stop:.2f} ({risk_pts:.2f} pts)", "inline": True},
+                                {"name": "Take Profit", "value": f"${fast_tp:.2f} (+{abs(fast_tp - entry):.2f} pts)", "inline": True},
+                                {"name": "Size", "value": f"{qty} SOL (~${qty * entry:.2f})", "inline": True},
+                                {"name": "Status", "value": "FILLED & PROTECTED", "inline": True},
+                            ],
+                            footer="Solana Fractal Bot — Trader-Skill Risk Engine Active",
+                        )
 
             # ---------------------------------------------------------
             # 2. CHECK IF ANY OPEN TRADE CLOSED VIA SL OR TP
@@ -211,6 +220,9 @@ def run():
                         pnl = 0.0
                     # Only alert on exit trades (where realized PnL is non-zero)
                     if pnl != 0:
+                        # Feed trade outcome into Trader-Skill Risk Engine
+                        risk_manager.record_closed_trade(pnl)
+
                         is_win = pnl > 0
                         title = f"🎯 TAKE PROFIT HIT: +${pnl:.2f} USDT" if is_win else f"🛑 STOP LOSS HIT: -${abs(pnl):.2f} USDT"
                         desc = (
